@@ -147,6 +147,7 @@
               "type": "string"
             },
             "example": [
+              "online_embedder_ensemble",
               "dense_embedder_trt",
               "text_tokenizer"
             ]

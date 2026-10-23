@@ -22,11 +22,12 @@ Both Triton C++ runtime and the operational FastAPI probe server (OpenAPI 3.1, h
 
 1. **Continuous Doc API Updates**: The [`.ai/doc-api.md`](.ai/doc-api.md) file and OpenAPI 3.1 endpoints (`/docs`, `/redoc`, `/api/docs`, `/openapi.json`) MUST be updated on **every code change or addition**, regardless of how small the modification is.
 2. **Secured Logging**: All logs must be structured JSON. Strictly redact user queries, document chunks, raw float embedding vectors, customer secrets, and bearer tokens before emission.
-3. **In-Engine C++ Tokenization**: Preprocessing tokenizers must run directly inside Triton via C++ runtimes (`text_tokenizer`), keeping Python GIL overhead off the critical path.
+3. **In-Engine C++ Tokenization & Triton Ensemble Pipelines**: Preprocessing tokenizers must run directly inside Triton via C++ runtimes (`text_tokenizer`) composed via Triton Ensemble Pipelines (`online_embedder_ensemble`, `online_reranker_ensemble`, `batch_embedder_ensemble`), keeping Python GIL overhead off the critical path and enabling single-round-trip execution.
 4. **FP16 TensorRT Standardization**: All models serialize to optimized FP16 TensorRT engines (`model.plan`).
-5. **Native Queue Backpressure & RRF Fallback**: Respect queue timeouts; emit standard error codes to trigger immediate upstream fallback to un-reranked RRF scores.
-6. **POSIX Shared Memory Lifecycle**: Allocate, register, and cleanly unregister `/dev/shm` buffers (8 GiB `emptyDir` RAM) without leaking kernel shared memory descriptors.
+5. **Native Queue Backpressure & RRF Fallback**: Respect queue timeouts; emit standard error codes (`RESOURCE_EXHAUSTED`) to trigger immediate upstream fallback to un-reranked RRF scores.
+6. **POSIX Shared Memory Lifecycle & Pod Boundaries**: Allocate, register, and cleanly unregister `/dev/shm` buffers (8 GiB `emptyDir` RAM) strictly for co-located workers in the same Kubernetes Pod without leaking kernel shared memory descriptors. Remote workers communicate over batched gRPC.
 7. **Code Quality**: All code must pass `python -m ruff check`, `python -m ruff format --check`, and strict `mypy` typechecks.
+
 
 ---
 

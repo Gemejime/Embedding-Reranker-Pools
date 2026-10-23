@@ -38,12 +38,13 @@
 
 ## Memory Safety & GPU Protection
 
-1. **VRAM Allocation Ceilings**:
-   - Total engine allocations per GPU must be capped at $\le 20\text{ GiB}$ ($83\%$ of $24\text{ GB}$ on NVIDIA L4/A10G).
-   - This safety headroom guarantees that dynamic batching peaks and memory fragmentation will not trigger CUDA out-of-memory (`CUDA OOM`) terminations.
+1. **VRAM Allocation Ceilings & Dynamic Headroom**:
+   - **Static Engine Allocation Ceiling**: Total serialized TensorRT model engines (`model.plan`) and static scratch allocations per GPU must be capped at $\le 20\text{ GiB}$ ($83.3\%$ of $24\text{ GB}$ on NVIDIA L4/A10G).
+   - **Dynamic Execution Headroom**: The remaining $\approx 4\text{ GiB}$ ($16.7\%$) is strictly reserved for CUDA runtime contexts and dynamic batching activation memory.
+   - **Active Saturation Alert**: Active memory allocation exceeding $85\%$ ($> 20.4\text{ GiB}$) on any node fires a **Severity: Critical** Prometheus alert (`triton_gpu_memory_used_bytes`).
 2. **Shared Memory Boundary Isolation**:
-   - Shared memory `/dev/shm` must be mounted as a pod-scoped Kubernetes `emptyDir` RAM volume.
-   - Cross-pod `/dev/shm` sharing is strictly prohibited to eliminate unexpected container crashes or `SIGBUS` memory faults.
+   - Shared memory `/dev/shm` must be mounted as a pod-scoped Kubernetes `emptyDir` RAM volume (8 GiB).
+   - Cross-pod `/dev/shm` sharing is strictly prohibited to eliminate container crashes and `SIGBUS` memory faults. Remote worker pods communicate over batched gRPC.
    - All shared memory segments must be unregistered and unmapped cleanly during request teardown.
 
 ---

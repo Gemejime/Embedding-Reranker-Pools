@@ -168,11 +168,61 @@ message InferOutputTensor {
 
 ---
 
-## 3. Dynamic Batching Model Configurations (`config.pbtxt`)
+## 3. Dynamic Batching Model Configurations (`config.pbtxt`) & Ensemble Pipelines
+
+To eliminate external Python GIL bottlenecks and provide end-to-end zero-copy execution, each repository pairs its C++ HuggingFace tokenizer with its TensorRT engine via a top-level Triton Ensemble Model (`ensemble_scheduler`).
 
 ### A. Online Dense Embedding Repository (`online_embedding_repository`)
 
-**Model**: `dense_embedder_trt`
+#### 1. Ensemble Pipeline: `online_embedder_ensemble`
+- **Platform**: `ensemble`
+- **Max Batch Size**: `32`
+- **Input**: `raw_text` (`TYPE_STRING`, shape `[ 1 ]`)
+- **Output**: `embeddings` (`TYPE_FP16`, shape `[ 768 ]`)
+- **Internal Pipeline**: Steps `raw_text` $\rightarrow$ `text_tokenizer` (`input_ids`, `attention_mask`) $\rightarrow$ `dense_embedder_trt` (`embeddings`).
+
+```protobuf
+name: "online_embedder_ensemble"
+platform: "ensemble"
+max_batch_size: 32
+
+input [
+  {
+    name: "raw_text"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  }
+]
+
+output [
+  {
+    name: "embeddings"
+    data_type: TYPE_FP16
+    dims: [ 768 ]
+  }
+]
+
+ensemble_scheduling {
+  step [
+    {
+      model_name: "text_tokenizer"
+      model_version: -1
+      input_map { key: "raw_text", value: "raw_text" }
+      output_map { key: "input_ids", value: "token_ids" }
+      output_map { key: "attention_mask", value: "attn_mask" }
+    },
+    {
+      model_name: "dense_embedder_trt"
+      model_version: -1
+      input_map { key: "input_ids", value: "token_ids" }
+      input_map { key: "attention_mask", value: "attn_mask" }
+      output_map { key: "embeddings", value: "embeddings" }
+    }
+  ]
+}
+```
+
+#### 2. Engine Model: `dense_embedder_trt`
 - **Engine**: TensorRT FP16 (`model.plan`)
 - **Max Batch Size**: `32`
 - **Dynamic Batching**: `max_queue_delay_microseconds: 2000` (2 ms)
@@ -221,7 +271,61 @@ instance_group [
 
 ### B. Online Cross-Encoder Reranker Repository (`online_reranker_repository`)
 
-**Model**: `cross_encoder_trt`
+#### 1. Ensemble Pipeline: `online_reranker_ensemble`
+- **Platform**: `ensemble`
+- **Max Batch Size**: `32`
+- **Inputs**: `query` (`TYPE_STRING`, shape `[ 1 ]`), `passage` (`TYPE_STRING`, shape `[ 1 ]`)
+- **Output**: `logits` (`TYPE_FP16`, shape `[ 1 ]`)
+- **Internal Pipeline**: Steps `query` + `passage` $\rightarrow$ `text_tokenizer` (`input_ids`, `attention_mask`) $\rightarrow$ `cross_encoder_trt` (`logits`).
+
+```protobuf
+name: "online_reranker_ensemble"
+platform: "ensemble"
+max_batch_size: 32
+
+input [
+  {
+    name: "query"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  },
+  {
+    name: "passage"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  }
+]
+
+output [
+  {
+    name: "logits"
+    data_type: TYPE_FP16
+    dims: [ 1 ]
+  }
+]
+
+ensemble_scheduling {
+  step [
+    {
+      model_name: "text_tokenizer"
+      model_version: -1
+      input_map { key: "query", value: "query" }
+      input_map { key: "passage", value: "passage" }
+      output_map { key: "input_ids", value: "token_ids" }
+      output_map { key: "attention_mask", value: "attn_mask" }
+    },
+    {
+      model_name: "cross_encoder_trt"
+      model_version: -1
+      input_map { key: "input_ids", value: "token_ids" }
+      input_map { key: "attention_mask", value: "attn_mask" }
+      output_map { key: "logits", value: "logits" }
+    }
+  ]
+}
+```
+
+#### 2. Engine Model: `cross_encoder_trt`
 - **Engine**: TensorRT FP16 (`model.plan`)
 - **Max Batch Size**: `32`
 - **Dynamic Batching**: `max_queue_delay_microseconds: 4000` (4 ms)
@@ -271,7 +375,54 @@ instance_group [
 
 ### C. Batch Ingestion Repository (`batch_ingestion_repository`)
 
-**Model**: `batch_embedder_trt`
+#### 1. Ensemble Pipeline: `batch_embedder_ensemble`
+- **Platform**: `ensemble`
+- **Max Batch Size**: `256`
+- **Input**: `raw_text` (`TYPE_STRING`, shape `[ 1 ]`)
+- **Output**: `embeddings` (`TYPE_FP16`, shape `[ 768 ]`)
+
+```protobuf
+name: "batch_embedder_ensemble"
+platform: "ensemble"
+max_batch_size: 256
+
+input [
+  {
+    name: "raw_text"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  }
+]
+
+output [
+  {
+    name: "embeddings"
+    data_type: TYPE_FP16
+    dims: [ 768 ]
+  }
+]
+
+ensemble_scheduling {
+  step [
+    {
+      model_name: "text_tokenizer"
+      model_version: -1
+      input_map { key: "raw_text", value: "raw_text" }
+      output_map { key: "input_ids", value: "token_ids" }
+      output_map { key: "attention_mask", value: "attn_mask" }
+    },
+    {
+      model_name: "batch_embedder_trt"
+      model_version: -1
+      input_map { key: "input_ids", value: "token_ids" }
+      input_map { key: "attention_mask", value: "attn_mask" }
+      output_map { key: "embeddings", value: "embeddings" }
+    }
+  ]
+}
+```
+
+#### 2. Engine Model: `batch_embedder_trt`
 - **Engine**: TensorRT FP16 (`model.plan`)
 - **Max Batch Size**: `256`
 - **Dynamic Batching**: `max_queue_delay_microseconds: 50000` (50 ms)
@@ -320,11 +471,14 @@ instance_group [
 
 ---
 
-## 4. POSIX Shared Memory IPC Protocol (`/dev/shm`)
+## 4. POSIX Shared Memory IPC Protocol (`/dev/shm`) & Pod Boundaries
 
-For high-density batch ingestion, `rag-chunk-lifecycle-service` and ingestion workers utilize local POSIX shared memory buffers to bypass network serialization:
+For high-density batch ingestion, `rag-chunk-lifecycle-service` and ingestion workers utilize local POSIX shared memory buffers to bypass network serialization **when co-located within the same Kubernetes Pod**:
 
-1. **Mount Specification**: Kubernetes `emptyDir` RAM volume mounted at `/dev/shm`, sized to `8Gi`.
+1. **Kubernetes Boundary Invariant**:
+   - POSIX shared memory (`/dev/shm`) is mounted as a Kubernetes `emptyDir` RAM volume sized to `8Gi`.
+   - **Strict Pod Isolation**: Shared memory regions are shared strictly between containers within the **same Kubernetes Pod**. Cross-pod or cross-node `/dev/shm` access is strictly forbidden to prevent `SIGBUS` memory faults.
+   - Remote ingestion workers running on separate nodes use **batched gRPC over HTTP/2** directly.
 2. **Buffer Allocation**:
    ```c
    int shm_fd = shm_open("/triton_batch_shm_region", O_CREAT | O_RDWR, 0660);
@@ -351,3 +505,4 @@ For high-density batch ingestion, `rag-chunk-lifecycle-service` and ingestion wo
 | `DEADLINE_EXCEEDED` (4) | Request exceeded client timeout budget | Abort request; log warning; fall back to un-reranked RRF scores |
 | `INVALID_ARGUMENT` (3) | Token length exceeds maximum context window | Deterministically truncate at C++ kernel boundary |
 | `UNAVAILABLE` (14) | Triton pod restarting or spot eviction | Route request to healthy AZ replica or retry with backoff |
+

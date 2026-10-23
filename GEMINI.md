@@ -39,18 +39,19 @@ Always maintain strict physical separation between the 3 compute pools:
 2. **Online Reranker Pool (Pool B)**: Dedicated NVIDIA L4/A10G GPUs on on-demand nodes; $\le 4\text{ ms}$ queue delay, max batch size $32$. Latency P99 $\le 30\text{ ms}$.
 3. **Batch Ingestion Pool**: Preemptible spot node groups; $50\text{ ms}$ queue delay, max batch size $256$. Sustains $2{,}500\text{--}3{,}500\text{ chunks/sec}$ per node.
 
-### D. In-Engine C++ Tokenization & TensorRT FP16 Serialization
-- Tokenization must execute directly inside Triton via C++ runtimes (`text_tokenizer`) to eliminate Python GIL bottlenecks.
+### D. In-Engine C++ Tokenization & Triton Ensemble Pipelines
+- Tokenization must execute directly inside Triton via C++ runtimes (`text_tokenizer`) composed via Triton Ensemble Pipelines (`online_embedder_ensemble`, `online_reranker_ensemble`, `batch_embedder_ensemble`) to eliminate Python GIL bottlenecks and provide single-round-trip inference.
 - Models must serialize as FP16 TensorRT engines (`model.plan`).
 
 ### E. Native Backpressure & Graceful RRF Fallback
 Enforce native queue delay timeouts (`max_queue_delay_microseconds`). When queues saturate, return standard error status codes (`RESOURCE_EXHAUSTED`) to allow upstream orchestrators to fall back instantly to un-reranked Reciprocal Rank Fusion (RRF) scores.
 
-### F. POSIX Shared Memory IPC (`/dev/shm`)
-Use pod-scoped Kubernetes `emptyDir` RAM volume mounts ($8\text{ GiB}$) for zero-copy tensor passing in high-throughput batch ingestion. Always release and unmap shared memory segments cleanly to prevent memory leaks.
+### F. POSIX Shared Memory IPC (`/dev/shm`) & Pod Boundaries
+Use pod-scoped Kubernetes `emptyDir` RAM volume mounts ($8\text{ GiB}$) for zero-copy tensor passing in high-throughput batch ingestion strictly for co-located workers. Cross-pod or cross-node `/dev/shm` sharing is strictly prohibited; remote workers communicate over batched gRPC over HTTP/2. Always release and unmap shared memory segments cleanly to prevent memory leaks.
 
-### G. Operational VRAM Ceilings
-Cap aggregate model allocations per GPU at $\le 20\text{ GiB}$ ($83\%$ of $24\text{ GB}$) to prevent CUDA out-of-memory errors.
+### G. Operational VRAM Ceilings & Dynamic Headroom
+Cap aggregate static model allocations per GPU at $\le 20\text{ GiB}$ ($83.3\%$ of $24\text{ GB}$) to leave $4\text{ GiB}$ dedicated headroom for dynamic batching activation memory. Active runtime memory exceeding $85\%$ ($> 20.4\text{ GiB}$) fires a Severity: Critical alert.
+
 
 ---
 
