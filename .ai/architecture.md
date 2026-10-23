@@ -77,8 +77,8 @@ Aligned with *Production Grade Backend Concepts*:
     - Candidate pairs exceeding $2048$ tokens for cross-encoders are deterministically truncated.
     - Eliminates Python GIL stalls, unhandled exceptions, and memory leaks.
 - **Backpressure & Throttling**:
-  - Triton native queue duration limits (`max_queue_delay_microseconds`).
-  - Saturation triggers immediate `RESOURCE_EXHAUSTED` (gRPC code 8) or HTTP 429 status codes, avoiding queue cascading.
+  - Dynamic batching wait times are bounded by `max_queue_delay_microseconds` to limit micro-batch accumulation delay prior to execution without autonomously rejecting requests.
+  - Saturated queues enforce an explicit overload policy (`default_queue_policy` with `timeout_action: REJECT` and `max_queue_size`), returning `RESOURCE_EXHAUSTED` (gRPC code 8) or HTTP 429 status codes under queue saturation to prevent cascading failure and trigger upstream RRF fallback.
 - **Idempotency**:
   - Model inference operations are purely deterministic mathematical transformations; identical input payloads yield identical tensor representations.
 
@@ -106,7 +106,7 @@ Aligned with *Production Grade Backend Concepts*:
 ### Layer 4: Security & Identity
 - **Secured Logging Invariant**:
   - Strictly redact user query text, raw document chunks, customer secrets, bearer tokens, and presigned URLs from all logs.
-  - Emit machine-parseable JSON logs containing only metadata IDs (`request_id`, `model_name`, `pool_type`, `batch_size`, `latency_ms`).
+  - Emit machine-parseable JSON logs containing only metadata IDs (`request_id`, `model_name`, `pool_type`, `batch_size`, `queue_latency_ms`, `compute_latency_ms`, `status`).
 - **Memory Safety & VRAM Boundaries**:
   - **Static Engine Allocation Ceiling**: Total serialized TensorRT engines and static scratch allocations capped at $\le 20\text{ GiB}$ ($83.3\%$ of $24\text{ GB}$ on L4/A10G).
   - **Dynamic Headroom**: The remaining $\approx 4\text{ GiB}$ ($16.7\%$) is strictly reserved for CUDA runtime contexts and dynamic batching activation tensors.
@@ -135,36 +135,36 @@ rag-inference-serving/
 │       ├── online_embedding_repository/
 │       │   ├── text_tokenizer/
 │       │   │   ├── 1/
-│       │   │   │   └── model.onnx            # C++ tokenization runtime
+│       │   │   │   └── model.onnx            # Configured ONNX Runtime tokenizer backend
 │       │   │   └── config.pbtxt
 │       │   ├── dense_embedder_trt/
 │       │   │   ├── 1/
 │       │   │   │   └── model.plan            # FP16 TensorRT engine
 │       │   │   └── config.pbtxt              # Dynamic batching: max 32, delay 2ms
 │       │   └── online_embedder_ensemble/
-│       │       └── config.pbtxt              # Chains text_tokenizer -> dense_embedder_trt
+│       │       └── config.pbtxt              # Chains ONNX Runtime text_tokenizer -> dense_embedder_trt
 │       ├── online_reranker_repository/
 │       │   ├── text_tokenizer/
 │       │   │   ├── 1/
-│       │   │   │   └── model.onnx            # Candidate pair tokenization runtime
+│       │   │   │   └── model.onnx            # Candidate pair ONNX Runtime tokenizer backend
 │       │   │   └── config.pbtxt
 │       │   ├── cross_encoder_trt/
 │       │   │   ├── 1/
 │       │   │   │   └── model.plan            # Isolated FP16 engine
-│       │   │   └── config.pbtxt              # Dynamic batching: max 32, delay 4ms
+│       │   │   └── config.pbtxt              # Dynamic batching: max 32, delay 4ms, queue rejection
 │       │   └── online_reranker_ensemble/
-│       │       └── config.pbtxt              # Chains text_tokenizer -> cross_encoder_trt
+│       │       └── config.pbtxt              # Chains ONNX Runtime text_tokenizer -> cross_encoder_trt
 │       └── batch_ingestion_repository/
 │           ├── text_tokenizer/
 │           │   ├── 1/
-│           │   │   └── model.onnx
+│           │   │   └── model.onnx            # Bulk chunk ONNX Runtime tokenizer backend
 │           │   └── config.pbtxt
 │           ├── batch_embedder_trt/
 │           │   ├── 1/
 │           │   │   └── model.plan            # Throughput-optimized engine
 │           │   └── config.pbtxt              # Dynamic batching: max 256, delay 50ms
 │           └── batch_embedder_ensemble/
-│               └── config.pbtxt              # Chains text_tokenizer -> batch_embedder_trt
+│               └── config.pbtxt              # Chains ONNX Runtime text_tokenizer -> batch_embedder_trt
 ├── api/
 │   ├── proto/v1/
 │   │   └── triton_stubs.proto                # Upstream interface models
@@ -202,6 +202,6 @@ rag-inference-serving/
 - **ADR-001: Pool Decoupling (Online vs. Batch)**: Isolates online retrieval from batch ingestion workloads onto separate GPU node groups to guarantee query latency SLOs.
 - **ADR-002: Dedicated Cross-Encoder Node Pools**: Isolates compute-intensive cross-encoder rerankers from dense query embedders to avoid SM contention and thread stalls.
 - **ADR-003: Standard FP16 Model Compilation**: Mandates FP16 precision across all inference targets in initial releases, deferring INT8 quantization to avoid precision loss.
-- **ADR-004: In-Engine C++ Tokenization & Ensembles**: Runs tokenization directly within the Triton engine pipeline using C++ runtimes and ensemble schedulers, removing Python interpreter bottlenecks from the critical path.
+- **ADR-004: In-Engine C++ Tokenization & Ensembles**: Chains tokenizer models to TensorRT engines via Triton ensemble pipelines (configured with ONNX Runtime backend as scaffolding, with native in-engine C++ HuggingFace tokenization runtime pending), removing Python interpreter bottlenecks from the critical path.
 - **ADR-005: Elimination of Proxy Data Sidecars**: Connects callers directly to Triton via gRPC and pod-scoped shared memory, avoiding custom proxy processes for high-volume data movement.
 

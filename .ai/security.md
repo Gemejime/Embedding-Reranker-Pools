@@ -17,10 +17,11 @@
 ## Secured Logging Invariants
 
 1. **Strict Content Redaction (Zero Raw Payload Emission)**:
-   - User query text, document chunk text bodies, and raw float tensor arrays may contain customer Personally Identifiable Information (PII), Protected Health Information (PHI), or confidential enterprise intellectual property.
-   - **Under no circumstances may raw text strings, queries, chunk snippets, or embedding arrays be written to stdout, stderr, or external log collectors.**
+   - User query text, document chunk text bodies, raw float tensor arrays, and presigned URLs may contain customer Personally Identifiable Information (PII), Protected Health Information (PHI), or confidential enterprise intellectual property.
+   - **Under no circumstances may raw text strings, queries, chunk snippets, embedding arrays, or presigned URLs be written to stdout, stderr, or external log collectors.**
+   - `SecuredJSONFormatter` actively sanitizes and suppresses payload-bearing content within unstructured message strings (including embedded queries, chunks, float vector arrays, and presigned URLs) rather than relying solely on forbidden key names in `sanitize_value`.
 2. **Secrets & Authorization Masking**:
-   - Bearer tokens, JWT authorization headers, API keys, TLS certificates, and cloud credentials must be sanitized and replaced with `[REDACTED]` prior to logging.
+   - Bearer tokens, Basic authorization headers, API keys, password/secret field variants, TLS certificates, and cloud credentials (including SigV4 signatures) must be sanitized and replaced with `[REDACTED]` prior to logging.
 3. **Structured Sanity**:
    - All log lines must be structured JSON containing purely operational metadata:
      - `timestamp_utc`: ISO 8601 UTC timestamp.
@@ -32,7 +33,7 @@
      - `compute_latency_ms`: Time spent in TensorRT kernel execution.
      - `status`: Result code (`OK`, `RESOURCE_EXHAUSTED`, `ERROR`).
 4. **Error Trace Sanitization**:
-   - Exception handlers and crash loggers must sanitize filesystem paths, hostnames, and internal GPU memory addresses before emitting error records.
+   - Dedicated traceback sanitization (`sanitize_traceback`) sanitizes filesystem paths (`[PATH]/<filename>`), hostnames (`[REDACTED_HOST]`), and internal GPU memory addresses (`0x[REDACTED_GPU_ADDR]`) before emitting error records.
 
 ---
 

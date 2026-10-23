@@ -11,7 +11,7 @@
 
 ### Phase 1: TensorRT FP16 Serialization & C++ Tokenization (Weeks 1–2)
 - [x] Initialized repository architecture context, `.gitignore`, and AI agent protocols.
-- [x] Established Triton ensemble pipeline configurations (`online_embedder_ensemble`, `online_reranker_ensemble`, `batch_embedder_ensemble`) chaining C++ tokenizers to TensorRT FP16 engines.
+- [x] Established Triton ensemble pipeline configurations (`online_embedder_ensemble`, `online_reranker_ensemble`, `batch_embedder_ensemble`) chaining ONNX Runtime tokenizer backends as scaffolding to TensorRT FP16 engines.
 - [ ] Export dense embedding models to ONNX and compile optimized TensorRT FP16 engines (`scripts/export_onnx.py`, `scripts/build_trt_engine.sh`).
 - [ ] Implement native in-engine C++ HuggingFace tokenizer pipelines within Triton model repositories (`text_tokenizer`).
 - [ ] Establish reproducible container build recipes with CUDA 12.4 and TensorRT runtimes (`deployments/docker/Dockerfile.triton`).
@@ -62,7 +62,7 @@
 
 ### Runbook 1: Online Queue Wait Time Alerts
 1. Check `triton_queue_duration_microseconds` on the affected online deployment.
-2. If queue latency exceeds 5 ms, verify current traffic rates against baseline capacity.
+2. If queue latency exceeds warning thresholds (4 ms for online embeddings, 8 ms for online rerankers), verify current traffic rates against baseline capacity.
 3. Ensure KEDA HPA is scaling pod replicas on the dedicated GPU node group.
 4. Confirm that upstream search orchestrators are falling back gracefully to un-reranked RRF scores.
 

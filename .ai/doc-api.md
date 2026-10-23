@@ -128,8 +128,21 @@ service GRPCInferenceService {
   rpc ModelReady(ModelReadyRequest) returns (ModelReadyResponse);
   rpc ModelMetadata(ModelMetadataRequest) returns (ModelMetadataResponse);
   rpc ModelInfer(ModelInferRequest) returns (ModelInferResponse);
-  rpc RegisterSharedMemory(RegisterSharedMemoryRequest) returns (RegisterSharedMemoryResponse);
-  rpc UnregisterSharedMemory(UnregisterSharedMemoryRequest) returns (UnregisterSharedMemoryResponse);
+  rpc SystemSharedMemoryRegister(SystemSharedMemoryRegisterRequest) returns (SystemSharedMemoryRegisterResponse);
+  rpc SystemSharedMemoryUnregister(SystemSharedMemoryUnregisterRequest) returns (SystemSharedMemoryUnregisterResponse);
+}
+
+message ModelMetadataResponse {
+  message TensorMetadata {
+    string name = 1;
+    string datatype = 2;
+    repeated int64 shape = 3;
+  }
+  string name = 1;
+  repeated string versions = 2;
+  string platform = 3;
+  repeated TensorMetadata inputs = 4;
+  repeated TensorMetadata outputs = 5;
 }
 
 message ModelInferRequest {
@@ -147,6 +160,7 @@ message InferInputTensor {
   string datatype = 2;          // e.g., "FP32", "FP16", "INT32", "BYTES"
   repeated int64 shape = 3;     // [batch_size, sequence_length]
   map<string, InferParameter> parameters = 4;
+  InferTensorContents contents = 5;
 }
 
 message ModelInferResponse {
@@ -163,6 +177,7 @@ message InferOutputTensor {
   string datatype = 2;          // "FP16" or "FP32"
   repeated int64 shape = 3;     // [batch_size, 768] or [batch_size, 1]
   map<string, InferParameter> parameters = 4;
+  InferTensorContents contents = 5;
 }
 ```
 
@@ -331,7 +346,7 @@ ensemble_scheduling {
 - **Dynamic Batching**: `max_queue_delay_microseconds: 4000` (4 ms)
 - **Target Workload**: Top-10 to top-30 candidate pairs
 - **SLO Target**: P99 $\le 30\text{ ms}$ under sustained load.
-- **Queue Saturation Fallback**: If queue delay exceeds limit, return `RESOURCE_EXHAUSTED` to trigger immediate orchestrator bypass to un-reranked RRF scores.
+- **Queue Saturation Fallback**: Saturated queues enforce `default_queue_policy` with `timeout_action: REJECT`, returning `RESOURCE_EXHAUSTED` to trigger immediate orchestrator bypass to un-reranked RRF scores.
 
 ```protobuf
 name: "cross_encoder_trt"
@@ -362,6 +377,11 @@ output [
 dynamic_batching {
   preferred_batch_size: [ 8, 16, 32 ]
   max_queue_delay_microseconds: 4000
+  default_queue_policy {
+    max_queue_size: 64
+    timeout_action: REJECT
+    default_timeout_microseconds: 10000
+  }
 }
 
 instance_group [
@@ -487,12 +507,12 @@ For high-density batch ingestion, `rag-chunk-lifecycle-service` and ingestion wo
    ```
 3. **Registration with Triton**:
    The caller registers the shared memory region with Triton via gRPC:
-   - Call `RegisterSharedMemoryRequest`: specifies `name`, `key`, `offset`, `byte_size`.
+   - Call `SystemSharedMemoryRegisterRequest`: specifies `name`, `key`, `offset`, `byte_size`.
 4. **Execution**:
    - `ModelInferRequest` references the registered region name instead of packing raw bytes in `raw_input_contents`.
    - Triton reads input tensors directly from RAM and writes output vectors directly back to the output `/dev/shm` region.
 5. **Cleanup Lifecycle**:
-   - Explicit `UnregisterSharedMemory` followed by `munmap` and `shm_unlink` to prevent orphaned memory segments.
+   - Explicit `SystemSharedMemoryUnregister` followed by `munmap` and `shm_unlink` to prevent orphaned memory segments.
 
 ---
 
