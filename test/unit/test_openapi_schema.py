@@ -33,6 +33,13 @@ class TestOpenApiSchema(unittest.TestCase):
         self.assertIn("pool_type", readiness.get("properties", {}))
         self.assertIn("models_ready", readiness.get("properties", {}))
 
+    def test_schema_additional_properties_false(self) -> None:
+        components = self.schema.get("components", {}).get("schemas", {})
+        self.assertIn("HealthStatus", components)
+        self.assertIn("ReadinessStatus", components)
+        self.assertFalse(components["HealthStatus"].get("additionalProperties", True))
+        self.assertFalse(components["ReadinessStatus"].get("additionalProperties", True))
+
 
 if __name__ == "__main__":
     unittest.main()
