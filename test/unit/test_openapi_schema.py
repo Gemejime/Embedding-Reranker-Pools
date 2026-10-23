@@ -9,12 +9,16 @@ class TestOpenApiSchema(unittest.TestCase):
     def setUp(self) -> None:
         self.schema_path = os.path.join("api", "openapi", "openapi.json")
         self.assertTrue(os.path.isfile(self.schema_path), "OpenAPI specification must exist")
-        with open(self.schema_path, "r", encoding="utf-8") as f:
+        with open(self.schema_path, encoding="utf-8") as f:
             self.schema = json.load(f)
 
     def test_openapi_version_and_info(self) -> None:
-        self.assertTrue(self.schema.get("openapi", "").startswith("3.1"), "OpenAPI specification must be 3.1.x")
-        self.assertEqual(self.schema["info"]["title"], "RAG Inference Serving Operational & Documentation API")
+        self.assertTrue(
+            self.schema.get("openapi", "").startswith("3.1"), "OpenAPI specification must be 3.1.x"
+        )
+        self.assertEqual(
+            self.schema["info"]["title"], "RAG Inference Serving Operational & Documentation API"
+        )
 
     def test_required_operational_endpoints_present(self) -> None:
         paths = self.schema.get("paths", {})

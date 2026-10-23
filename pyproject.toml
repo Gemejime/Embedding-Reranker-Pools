@@ -72,6 +72,6 @@ warn_unused_ignores = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers"
+addopts = "-ra -q --strict-markers -p no:faker"
 testpaths = ["test"]
 asyncio_mode = "auto"

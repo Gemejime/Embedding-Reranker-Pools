@@ -4,7 +4,12 @@ max_batch_size: 32
 
 input [
   {
-    name: "raw_text"
+    name: "query"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  },
+  {
+    name: "passage"
     data_type: TYPE_STRING
     dims: [ 1 ]
   }

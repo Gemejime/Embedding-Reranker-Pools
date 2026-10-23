@@ -3,18 +3,25 @@
 import json
 import logging
 import unittest
+
 from internal.logging.secured_logger import SecuredJSONFormatter, sanitize_value
 
 
 class TestSecuredLogging(unittest.TestCase):
     def test_sanitize_forbidden_raw_fields(self) -> None:
-        self.assertEqual(sanitize_value("query_text", "what is the capital of France?"), "[REDACTED len=30]")
-        self.assertEqual(sanitize_value("chunk_text", "sensitive customer agreement"), "[REDACTED len=28]")
+        self.assertEqual(
+            sanitize_value("query_text", "what is the capital of France?"), "[REDACTED len=30]"
+        )
+        self.assertEqual(
+            sanitize_value("chunk_text", "sensitive customer agreement"), "[REDACTED len=28]"
+        )
         self.assertEqual(sanitize_value("embedding", [0.12, 0.45, -0.89]), "[REDACTED count=3]")
         self.assertEqual(sanitize_value("token", "secret-token-123"), "[REDACTED len=16]")
 
     def test_sanitize_bearer_and_secrets(self) -> None:
-        msg = "User authenticated with Bearer eyJhbGciOiJIUzI1NiJ9.test and api_key=super_secret_key"
+        msg = (
+            "User authenticated with Bearer eyJhbGciOiJIUzI1NiJ9.test and api_key=super_secret_key"
+        )
         sanitized = sanitize_value("message", msg)
         self.assertNotIn("eyJhbGciOiJIUzI1NiJ9", sanitized)
         self.assertNotIn("super_secret_key", sanitized)
@@ -31,10 +38,10 @@ class TestSecuredLogging(unittest.TestCase):
             args=(),
             exc_info=None,
         )
-        record.request_id = "req-12345"  # type: ignore[attr-defined]
-        record.model_name = "dense_embedder_trt"  # type: ignore[attr-defined]
-        record.pool_type = "online_embedding"  # type: ignore[attr-defined]
-        record.batch_size = 1  # type: ignore[attr-defined]
+        record.__dict__["request_id"] = "req-12345"
+        record.__dict__["model_name"] = "dense_embedder_trt"
+        record.__dict__["pool_type"] = "online_embedding"
+        record.__dict__["batch_size"] = 1
 
         formatted_str = formatter.format(record)
         parsed = json.loads(formatted_str)

@@ -11,12 +11,14 @@ import json
 import logging
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 # Regex patterns for sensitive credentials & data
 AUTH_HEADER_REGEX = re.compile(r"(Bearer\s+)[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE)
-API_KEY_REGEX = re.compile(r"(api[_-]?key|token|secret|password)[\"']?\s*[:=]\s*[\"']?([^\"',\s]+)", re.IGNORECASE)
+API_KEY_REGEX = re.compile(
+    r"(api[_-]?key|token|secret|password)[\"']?\s*[:=]\s*[\"']?([^\"',\s]+)", re.IGNORECASE
+)
 SIGV4_REGEX = re.compile(r"(X-Amz-Signature=)[A-Za-z0-9]+", re.IGNORECASE)
 
 # Field names that must NEVER emit raw payload contents
@@ -65,7 +67,7 @@ class SecuredJSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_payload: dict[str, Any] = {
-            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "timestamp_utc": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": sanitize_value("message", record.getMessage()),
@@ -86,8 +88,9 @@ class SecuredJSONFormatter(logging.Formatter):
                 log_payload[attr] = getattr(record, attr)
 
         # Merge extra dictionary if present and sanitize
-        if hasattr(record, "extra") and isinstance(record.extra, dict):  # type: ignore[attr-defined]
-            for k, v in record.extra.items():  # type: ignore[attr-defined]
+        extra_data = getattr(record, "extra", None)
+        if isinstance(extra_data, dict):
+            for k, v in extra_data.items():
                 log_payload[k] = sanitize_value(k, v)
 
         if record.exc_info and record.exc_text:
