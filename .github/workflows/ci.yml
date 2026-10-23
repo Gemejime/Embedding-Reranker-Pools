@@ -19,10 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.11"
           cache: "pip"
@@ -42,19 +44,21 @@ jobs:
 
       - name: Run Static Type Analysis (mypy)
         run: |
-          mypy --config-file pyproject.toml . || true
+          mypy --config-file pyproject.toml .
 
   security-and-logging-audit:
     name: Secured Logging & Secrets Audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Audit for Hardcoded Secrets
         run: |
           echo "Scanning for accidental secrets or private keys..."
-          if grep -rnE "BEGIN (RSA|EC|OPENSSH) PRIVATE KEY" . --exclude-dir={.git,.venv}; then
+          if grep -rnE "BEGIN ((RSA|EC|OPENSSH|ENCRYPTED) )?PRIVATE KEY" . --exclude-dir={.git,.venv}; then
             echo "ERROR: Hardcoded private key detected!"
             exit 1
           fi
@@ -88,7 +92,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Validate Triton Repository Structure
         run: |
@@ -106,8 +112,12 @@ jobs:
               with open(cfg, "r") as f:
                   content = f.read()
               for tok in required_tokens:
-                  if tok not in content and "text_tokenizer" not in cfg:
-                      print(f"Warning: {cfg} missing dynamic batching property {tok}")
+                  if tok not in content and "text_tokenizer" not in cfg and "ensemble" not in cfg:
+                      print(f"ERROR: {cfg} missing dynamic batching property {tok}")
+                      missing += 1
+          if missing > 0:
+              print(f"FAILED: Found {missing} missing dynamic batching property violation(s).")
+              sys.exit(1)
           print(f"Validated {len(configs)} Triton config file(s).")
           '
 
@@ -116,7 +126,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Validate OpenAPI Specifications
         run: |
@@ -128,7 +140,8 @@ jobs:
                   schema = json.load(f)
               assert schema.get("openapi", "").startswith("3."), "OpenAPI must be version 3.x"
               assert "paths" in schema, "OpenAPI missing paths"
-              print(f"OpenAPI 3.1 validation succeeded. Documented paths: {list(schema[\"paths\"].keys())}")
+              doc_paths = list(schema["paths"].keys())
+              print(f"OpenAPI 3.1 validation succeeded. Documented paths: {doc_paths}")
           else:
               print(f"Notice: {schema_path} will be checked once instantiated.")
           '
@@ -138,10 +151,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.11"
           cache: "pip"
@@ -154,7 +169,7 @@ jobs:
       - name: Run Pytest Suites
         run: |
           if [ -d "test" ]; then
-            pytest -v test/ || echo "No tests to execute yet."
+            pytest -v test/
           else
             echo "Test directory not yet present; skipping."
           fi
@@ -164,10 +179,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4.2.0
         with:
           version: v3.14.0
 

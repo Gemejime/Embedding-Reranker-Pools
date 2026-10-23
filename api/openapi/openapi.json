@@ -96,6 +96,7 @@
     "schemas": {
       "HealthStatus": {
         "type": "object",
+        "additionalProperties": false,
         "properties": {
           "status": {
             "type": "string",
@@ -114,6 +115,7 @@
       },
       "ReadinessStatus": {
         "type": "object",
+        "additionalProperties": false,
         "properties": {
           "status": {
             "type": "string",
