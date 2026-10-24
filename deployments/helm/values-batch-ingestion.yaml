@@ -1,0 +1,57 @@
+# Value overlay for Batch Ingestion Pool (Spot Node Group)
+poolType: batch_ingestion
+
+replicaCount: 12
+
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    cpu: "8"
+    memory: "32Gi"
+  requests:
+    nvidia.com/gpu: 1
+    cpu: "4"
+    memory: "16Gi"
+
+nodeSelector:
+  node.kubernetes.io/instance-type: "g6.2xlarge"
+  k8s.amazonaws.com/lifecycle: "spot"
+
+tolerations:
+  - key: "spotInstance"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: compute-pool
+              operator: In
+              values:
+                - batch-ingestion
+
+autoscaling:
+  enabled: true
+  minReplicaCount: 12
+  maxReplicaCount: 16
+  cooldownPeriod: 120
+  pollingInterval: 10
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.event-streaming.svc:9092
+        topic: rag.ingestion.chunks
+        consumerGroup: rag-batch-embedder-group
+        lagThreshold: "10000"
+
+env:
+  RAG_SERVING_POOL_TYPE: "batch_ingestion"
+  RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS: "50000"
+  RAG_SERVING_MAX_BATCH_SIZE: "256"
+  MODEL_REPOSITORY: "/models/batch_ingestion_repository"

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: rag-inference-serving
+description: Hardware-accelerated Triton inference serving Helm chart for decoupled embedding and reranker pools.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - triton
+  - tensorrt
+  - rag
+  - embeddings
+  - reranker
+  - keda
+maintainers:
+  - name: enterprise-rag-team

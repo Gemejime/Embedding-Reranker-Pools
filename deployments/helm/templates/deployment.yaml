@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rag-inference-serving.fullname" . | default .Release.Name }}
+  labels:
+    app.kubernetes.io/name: rag-inference-serving
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    rag.enterprise.internal/pool: {{ .Values.poolType }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rag-inference-serving
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rag-inference-serving
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        rag.enterprise.internal/pool: {{ .Values.poolType }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: inference-worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+          ports:
+            - name: triton-grpc
+              containerPort: {{ .Values.service.grpcPort }}
+              protocol: TCP
+            - name: triton-http
+              containerPort: {{ .Values.service.httpPort }}
+              protocol: TCP
+            - name: triton-metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+            - name: operational
+              containerPort: {{ .Values.service.operationalPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.service.operationalPort }}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.service.operationalPort }}
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: shm-volume
+              mountPath: /dev/shm
+            - name: model-engines
+              mountPath: {{ .Values.modelStorage.mountPath }}
+              readOnly: {{ .Values.modelStorage.readOnly }}
+      volumes:
+        - name: shm-volume
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.shmVolume.sizeLimit }}
+        - name: model-engines
+          persistentVolumeClaim:
+            claimName: {{ .Values.modelStorage.persistentVolumeClaimName }}
+            readOnly: {{ .Values.modelStorage.readOnly }}
