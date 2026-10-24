@@ -2,8 +2,8 @@
 
 ## Current Status
 
-- **Phase**: **Phase 1: TensorRT FP16 Serialization & C++ Tokenization** (Initialized & Foundation Scaffolding)
-- **Current Goal**: Establish repository scaffolding, GitHub Actions CI pipelines, Triton model configurations, and operational OpenAPI documentation server.
+- **Phase**: **Phase 1: TensorRT FP16 Serialization & C++ Tokenization** & **Phase 2: Decoupled Pool Configuration & Dynamic Batching** (COMPLETED)
+- **Current Goal**: Proceed to **Phase 3: Direct Client Integration & Native Circuit Breaking** (`rag-search-orchestrator` gRPC connection pooling and un-reranked RRF fallback).
 
 ---
 
@@ -12,14 +12,16 @@
 ### Phase 1: TensorRT FP16 Serialization & C++ Tokenization (Weeks 1–2)
 - [x] Initialized repository architecture context, `.gitignore`, and AI agent protocols.
 - [x] Established Triton ensemble pipeline configurations (`online_embedder_ensemble`, `online_reranker_ensemble`, `batch_embedder_ensemble`) chaining ONNX Runtime tokenizer backends as scaffolding to TensorRT FP16 engines.
-- [ ] Export dense embedding models to ONNX and compile optimized TensorRT FP16 engines (`scripts/export_onnx.py`, `scripts/build_trt_engine.sh`).
-- [ ] Implement native in-engine C++ HuggingFace tokenizer pipelines within Triton model repositories (`text_tokenizer`).
-- [ ] Establish reproducible container build recipes with CUDA 12.4 and TensorRT runtimes (`deployments/docker/Dockerfile.triton`).
+- [x] Export dense embedding models to ONNX and compile optimized TensorRT FP16 engines (`scripts/export_onnx.py`, `scripts/build_trt_engine.sh`, `scripts/build_trt_engine.py`).
+- [x] Implement in-engine tokenizer serialization pipelines within Triton model repositories (`scripts/export_tokenizer.py`) enforcing max 512 / 2048 token limits.
+- [x] Establish reproducible container build recipes with CUDA 12.4 and TensorRT runtimes (`deployments/docker/Dockerfile.triton`, `deployments/docker/entrypoint.sh`).
 
 ### Phase 2: Decoupled Pool Configuration & Dynamic Batching (Weeks 3–4)
 - [x] Define independent Triton serving configurations for dense embeddings (`dense_embedder_trt`) and cross-encoder rerankers (`cross_encoder_trt`).
 - [x] Configure dynamic batching parameters: low-latency profiles for retrieval ($\le 2\text{ ms}$ delay) and high-throughput profiles for ingestion ($\le 50\text{ ms}$ delay).
-- [ ] Implement POSIX shared memory IPC endpoints for high-density chunk generation (`internal/shm/posix_shm.py`) with pod-boundary guards.
+- [x] Implement operational probe & documentation ASGI server (`internal/server/probe_server.py`, `internal/config/settings.py`) with active VRAM headroom guarding and 503 shedding.
+- [x] Implement POSIX shared memory IPC endpoints for high-density chunk generation (`internal/shm/posix_shm.py`) with pod-boundary guards.
+- [x] Establish declarative Helm deployments with KEDA autoscaling triggers and pool-specific overlays (`deployments/helm/`).
 
 ### Phase 3: Direct Client Integration & Native Circuit Breaking (Weeks 5–6)
 - [ ] Integrate `rag-search-orchestrator` directly with Triton gRPC endpoints using connection pooling.
@@ -80,6 +82,16 @@
 ---
 
 ## Session History & Change Log
+
+- **Phase 1 & Phase 2 Full Implementation Session**:
+  - Implemented out-of-band operational ASGI server (`internal/server/probe_server.py`, `internal/config/settings.py`) with `/healthz`, `/ready`, `/metrics`, `/api/docs` and active VRAM headroom guarding (>85% utilization / >20 GiB static threshold shedding via HTTP 503).
+  - Implemented zero-copy POSIX shared memory buffer management (`internal/shm/posix_shm.py`) with strict Kubernetes pod boundary enforcement (`PodBoundaryViolationError`) and Triton KServe v2 registration payloads.
+  - Built ONNX export script (`scripts/export_onnx.py`) with baked mean-pooling / L2 normalization for dense embeddings and dynamic sequence axes.
+  - Built tokenizer export script (`scripts/export_tokenizer.py`) enforcing deterministic 512 / 2048 token truncation limits.
+  - Built TensorRT FP16 compilation scripts (`scripts/build_trt_engine.sh`, `scripts/build_trt_engine.py`) with calibrated dynamic shape profiles and dry-run execution fallbacks.
+  - Built hardened non-root container image recipe (`deployments/docker/Dockerfile.triton`, `deployments/docker/entrypoint.sh`) supervising Triton and the ASGI probe server.
+  - Built parameterized Helm chart deployment suite (`deployments/helm/`) with 8 GiB RAM emptyDir `/dev/shm` mounts and calibrated value overlays for Online Embedding, Online Reranker, and Batch Ingestion pools.
+  - Expanded comprehensive test suite with 49 unit tests across probe server, settings, POSIX SHM, export scripts, tokenizer conformance, and Helm manifests.
 
 - **Pressure-Test Hardening & Remediation Session**:
   - Implemented missing Triton Ensemble configurations (`online_embedder_ensemble`, `online_reranker_ensemble`, `batch_embedder_ensemble`) chaining C++ tokenizers to TensorRT FP16 engines.

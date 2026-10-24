@@ -526,3 +526,48 @@ For high-density batch ingestion, `rag-chunk-lifecycle-service` and ingestion wo
 | `INVALID_ARGUMENT` (3) | Token length exceeds maximum context window | Deterministically truncate at C++ kernel boundary |
 | `UNAVAILABLE` (14) | Triton pod restarting or spot eviction | Route request to healthy AZ replica or retry with backoff |
 
+---
+
+## 6. Model Serialization & Engine Compilation CLI Specifications
+
+### A. ONNX Model Export (`scripts/export_onnx.py`)
+Exports Hugging Face models to dynamic-axis ONNX computation graphs:
+- **Dense Embedder (`--model-type dense`)**:
+  - Inlines Mean Pooling and L2 Normalization in the graph.
+  - Inputs: `input_ids`, `attention_mask` (dynamic `[batch_size, sequence_length]`).
+  - Output: `embeddings` (dynamic `[batch_size, 768]`).
+- **Cross-Encoder Reranker (`--model-type reranker`)**:
+  - Inputs: `input_ids`, `attention_mask`, `token_type_ids` (dynamic `[batch_size, sequence_length]`).
+  - Output: `logits` (dynamic `[batch_size, 1]`).
+- **Flags**: `--model-name-or-path`, `--output-path`, `--opset-version 17`, `--dry-run`.
+
+### B. In-Engine Tokenizer Serialization (`scripts/export_tokenizer.py`)
+Prepares tokenizer configuration and vocabulary for Triton's `text_tokenizer` backend:
+- Enforces deterministic kernel truncation limits:
+  - Dense Embedding: max `512` tokens.
+  - Cross-Encoder Reranker: max `2048` tokens.
+- Generates `model.onnx`, `vocab.txt`, and `tokenizer_config.json`.
+- **Flags**: `--model-type`, `--tokenizer-name-or-path`, `--output-dir`, `--max-length`, `--dry-run`.
+
+### C. TensorRT Compilation (`scripts/build_trt_engine.sh` / `scripts/build_trt_engine.py`)
+Generates FP16 `.plan` engines using NVIDIA `trtexec` adhering to calibrated shape profiles:
+- **`online_embed`**: min `[1, 1]`, opt `[16, 128]`, max `[32, 512]`
+- **`online_rerank`**: min `[1, 1]`, opt `[16, 256]`, max `[32, 2048]`
+- **`batch_ingestion`**: min `[1, 1]`, opt `[128, 256]`, max `[256, 512]`
+
+---
+
+## 7. Container Supervisor & Declarative Helm Deployments
+
+### A. Dual Process Supervisor (`deployments/docker/entrypoint.sh`)
+- Supervises `tritonserver` (ports 8000, 8001, 8002) and `uvicorn probe_server:app` (port 8080).
+- Traps `SIGTERM` and `SIGINT` to cleanly signal child processes and drain connections before process exit.
+- Hardened non-root user (UID 1000, `triton`).
+
+### B. Parameterized Helm Overlays (`deployments/helm/`)
+- `values-online-embed.yaml`: 4–8 replicas, on-demand node group affinity, queue delay $\le 2\text{ ms}$, max batch 32, KEDA autoscaling trigger on `triton_queue_duration_microseconds` $\ge 3000\mu\text{s}$.
+- `values-online-rerank.yaml`: 4–12 replicas, on-demand node group affinity, queue delay $\le 4\text{ ms}$, max batch 32, KEDA autoscaling trigger on `triton_queue_duration_microseconds` $\ge 5000\mu\text{s}$.
+- `values-batch-ingestion.yaml`: 12–16 replicas, preemptible spot node group with spot tolerations, queue delay $\le 50\text{ ms}$, max batch 256, KEDA autoscaling trigger on Kafka chunk backlog depth.
+- **Storage**: 8 GiB RAM `emptyDir` mounted at `/dev/shm`, read-only NVMe CSI persistent volume mounts for model engines (`readOnly: true`).
+
+
