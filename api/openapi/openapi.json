@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "RAG Inference Serving Operational & Documentation API",
-    "description": "Internal HTTP Documentation, Health, and Operational API for rag-inference-serving (Triton / TensorRT runtime)",
-    "version": "1.0.0"
+    "description": "Internal HTTP Documentation, Health, and Operational API for rag-inference-serving (Triton / TensorRT runtime with Phase 3 Direct Client Integration, gRPC Connection Pooling, and Native Circuit Breaking)",
+    "version": "1.1.0"
   },
   "servers": [
     {

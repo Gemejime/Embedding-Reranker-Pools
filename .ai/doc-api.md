@@ -570,4 +570,85 @@ Generates FP16 `.plan` engines using NVIDIA `trtexec` adhering to calibrated sha
 - `values-batch-ingestion.yaml`: 12–16 replicas, preemptible spot node group with spot tolerations, queue delay $\le 50\text{ ms}$, max batch 256, KEDA autoscaling trigger on Kafka chunk backlog depth.
 - **Storage**: 8 GiB RAM `emptyDir` mounted at `/dev/shm`, read-only NVMe CSI persistent volume mounts for model engines (`readOnly: true`).
 
+---
+
+## 8. Client Integration Library & Native Circuit Breaking (Phase 3)
+
+### A. Architectural Overview & Polyglot Contracts
+The serving infrastructure provides low-latency gRPC access without intermediate proxy sidecars (ADR-005):
+- **Go Microservice Integration (`rag-search-orchestrator`)**:
+  - Protobuf definitions in `api/proto/v1/triton_stubs.proto` compile with `option go_package = "api/proto/v1/inference";`.
+  - Go callers establish HTTP/2 keepalive connection pools directly to Triton gRPC endpoints (port `8001`).
+- **Python Client Library (`internal/client/`)**:
+  - Provides reference implementation, used by Python workers (`rag-document-ai-worker`, `rag-eval-governance-worker`), batch ingestion pipelines, and integration tests.
+  - Implements zero-copy KServe v2 binary tensor codecs, discrete pool connection pooling, fault-tolerant circuit breaking, and un-reranked RRF fallback.
+
+### B. KServe v2 Binary Tensor Codec (`internal/client/kserve_codec.py`)
+Direct binary encoding avoiding JSON serialization overhead:
+- **`pack_string_tensor(strings: Sequence[str]) -> bytes`**:
+  - Encodes strings into Triton's raw BYTES wire format: a 4-byte little-endian unsigned integer (`<I`) denoting byte length, immediately followed by the UTF-8 encoded string bytes.
+- **`unpack_string_tensor(raw_bytes: bytes) -> list[str]`**:
+  - Inverse decoding parsing `<I` length-prefixed UTF-8 chunks.
+- **`unpack_fp16_tensor(raw_bytes: bytes, shape: tuple[int, ...]) -> list[list[float]]`**:
+  - Fast zero-copy unpacking of FP16 byte buffers into float32 nested lists using NumPy.
+- **`build_single_text_infer_request` & `build_text_pair_infer_request`**:
+  - Helper functions building deterministic `ModelInferRequest` protobuf payloads for embedding and reranker ensembles.
+
+### C. Discrete gRPC Connection Pooling (`internal/client/grpc_pool.py`)
+`TritonGRPCChannelPool` manages dedicated, thread-safe HTTP/2 channels for each isolated pool:
+- **Keepalive Parameters**:
+  - `grpc.keepalive_time_ms = 10000` (10s pings)
+  - `grpc.keepalive_timeout_ms = 5000` (5s ack timeout)
+  - `grpc.keepalive_permit_without_calls = 1`
+  - `grpc.http2.max_pings_without_data = 0`
+  - `grpc.max_receive_message_length = 67108864` (64 MiB)
+  - `grpc.max_send_message_length = 67108864` (64 MiB)
+- **Pool Targets**:
+  - `PoolType.ONLINE_EMBEDDING` $\rightarrow$ `RAG_SERVING_ONLINE_EMBED_GRPC_URL` (default `localhost:8001`)
+  - `PoolType.ONLINE_RERANKER` $\rightarrow$ `RAG_SERVING_ONLINE_RERANK_GRPC_URL` (default `localhost:8001`)
+  - `PoolType.BATCH_INGESTION` $\rightarrow$ `RAG_SERVING_BATCH_INGEST_GRPC_URL` (default `localhost:8001`)
+- **Lifecycle**: Lazy instantiation with lock protection, active liveness/readiness health probes (`is_channel_ready`, `is_pool_ready`), and clean connection draining via `.close()`.
+
+### D. Resilient Circuit Breaker & Un-Reranked RRF Fallback (`internal/client/circuit_breaker.py`)
+The `RerankerCircuitBreaker` protects online query latency budgets against Triton queue saturation:
+- **State Machine**:
+  ```mermaid
+  stateDiagram-v2
+      [*] --> CLOSED
+      CLOSED --> OPEN : 3 consecutive failures (RESOURCE_EXHAUSTED / DEADLINE_EXCEEDED / UNAVAILABLE)
+      OPEN --> HALF_OPEN : Recovery timeout (5.0s cooldown elapsed)
+      HALF_OPEN --> CLOSED : Probe request succeeds
+      HALF_OPEN --> OPEN : Probe request fails
+      OPEN --> OPEN : Instant un-reranked RRF fallback (bypasses gRPC)
+  ```
+- **Tripping Triggers**:
+  - `RESOURCE_EXHAUSTED` (Triton dynamic batch queue rejection when queue latency exceeds 4 ms)
+  - `DEADLINE_EXCEEDED` (Client-side 35 ms latency budget breach)
+  - `UNAVAILABLE` (Pod restarts or spot node evictions)
+- **Deterministic Un-Reranked RRF Fallback**:
+  - Preserves initial candidate ranking ($rank(d) \in [1..N]$) and computes:
+    $$RRF(d) = \frac{1.0}{k + rank(d)} \quad (k = 60.0)$$
+  - Returns `RerankResult` objects marked with `fallback_applied=True` and `fallback_reason`.
+
+### E. High-Performance Search Orchestrator Client (`internal/client/search_client.py`)
+- **`embed_query(query: str, request_id: str | None = None) -> list[float]`**:
+  - Client deadline: **15 ms** (`timeout=0.015`).
+  - Calls `online_embedder_ensemble`, unpacking 768-dimensional FP16 vectors.
+- **`rerank(query: str, candidates: list[CandidateDocument], request_id: str | None = None) -> list[RerankResult]`**:
+  - Client deadline: **35 ms** (`timeout=0.035`).
+  - Automatically chunks candidate sets exceeding `max_batch_size = 32`.
+  - Empty candidates list returns `[]` immediately without network roundtrips.
+  - Automatically catches server rejections or timeout breaches and returns deterministic RRF fallbacks.
+- **Secured Structured Logging**:
+  - Emits correlation metrics (`request_id`, `model_name`, `pool_type`, `batch_size`, `compute_latency_ms`).
+  - Redacts query text, candidate passages, and raw embedding arrays.
+
+### F. High-Density Batch Ingestion Client (`internal/client/batch_client.py`)
+- **`embed_chunks(chunks: Sequence[str], target_host: str = "localhost", use_shm: bool = False) -> list[list[float]]`**:
+  - Dynamic micro-batching: splits arbitrary chunk sequences into batches of $N \le 256$ chunks.
+  - Dual transport routing:
+    - **Pod-Local (`target_host="localhost"`, `use_shm=True`)**: Passes tensors via 8 GiB `/dev/shm` emptyDir using POSIX shared memory and Triton `SystemSharedMemoryRegister`.
+    - **Remote Node (`target_host != "localhost"`)**: Validates pod boundaries (`validate_pod_boundary`), rejecting cross-pod SHM with `PodBoundaryViolationError` and streaming batches over HTTP/2 gRPC.
+
+
 

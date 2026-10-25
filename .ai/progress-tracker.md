@@ -2,8 +2,8 @@
 
 ## Current Status
 
-- **Phase**: **Phase 1: TensorRT FP16 Serialization & C++ Tokenization** & **Phase 2: Decoupled Pool Configuration & Dynamic Batching** (COMPLETED)
-- **Current Goal**: Proceed to **Phase 3: Direct Client Integration & Native Circuit Breaking** (`rag-search-orchestrator` gRPC connection pooling and un-reranked RRF fallback).
+- **Phase**: **Phase 1: TensorRT FP16 Serialization & C++ Tokenization**, **Phase 2: Decoupled Pool Configuration & Dynamic Batching**, and **Phase 3: Direct Client Integration & Native Circuit Breaking** (COMPLETED)
+- **Current Goal**: Proceed to **Phase 4: Cluster Load Sweeps, Chaos & Autoscaling** (Weeks 7–8).
 
 ---
 
@@ -24,9 +24,9 @@
 - [x] Establish declarative Helm deployments with KEDA autoscaling triggers and pool-specific overlays (`deployments/helm/`).
 
 ### Phase 3: Direct Client Integration & Native Circuit Breaking (Weeks 5–6)
-- [ ] Integrate `rag-search-orchestrator` directly with Triton gRPC endpoints using connection pooling.
-- [ ] Configure orchestrator-side circuit breaking triggered by Triton queue errors (`RESOURCE_EXHAUSTED` $\rightarrow$ un-reranked RRF fallback).
-- [ ] Wire `rag-chunk-lifecycle-service` and ingestion workers directly to the batch ingestion Triton pool.
+- [x] Integrate `rag-search-orchestrator` directly with Triton gRPC endpoints using connection pooling (`internal/client/grpc_pool.py`, `internal/client/search_client.py`).
+- [x] Configure orchestrator-side circuit breaking triggered by Triton queue errors (`RESOURCE_EXHAUSTED` $\rightarrow$ un-reranked RRF fallback via `internal/client/circuit_breaker.py`).
+- [x] Wire `rag-chunk-lifecycle-service` and ingestion workers directly to the batch ingestion Triton pool (`internal/client/batch_client.py`).
 
 ### Phase 4: Cluster Load Sweeps, Chaos & Autoscaling (Weeks 7–8)
 - [ ] Execute load sweeps validating single-node throughput ($2{,}500\text{--}3{,}500\text{ chunks/sec}$) and multi-node scaling ($\ge 40{,}000\text{ chunks/sec}$ across spot nodes).
@@ -82,6 +82,16 @@
 ---
 
 ## Session History & Change Log
+
+- **Phase 3 Client Integration & Circuit Breaking Session**:
+  - Implemented `api/proto/v1/triton_stubs.proto` with Go package option `api/proto/v1/inference` and compiled python gRPC stubs (`triton_stubs_pb2.py`, `triton_stubs_pb2_grpc.py`, `triton_stubs_pb2.pyi`) with package-safe relative imports.
+  - Implemented zero-copy Triton KServe v2 binary tensor codec (`internal/client/kserve_codec.py`) supporting 4-byte little-endian string packing, fast FP16 buffer unpacking, and deterministic request construction.
+  - Implemented thread-safe gRPC connection pool (`internal/client/grpc_pool.py`) maintaining isolated HTTP/2 keepalive channels for Online Embedding, Online Reranker, and Batch Ingestion pools.
+  - Implemented fault-tolerant circuit breaker (`internal/client/circuit_breaker.py`) with 3-state machine (`CLOSED`, `OPEN`, `HALF_OPEN`), tripping on `RESOURCE_EXHAUSTED`, `DEADLINE_EXCEEDED`, and `UNAVAILABLE`, providing deterministic un-reranked Reciprocal Rank Fusion (RRF) scores: $RRF(d) = 1 / (60 + rank(d))$.
+  - Implemented high-performance search orchestrator client (`internal/client/search_client.py`) enforcing 15 ms embedding and 35 ms reranking client deadlines with dynamic batch chunking ($\le 32$) and structured secured logging redacting all query and passage payloads.
+  - Implemented high-density batch ingestion client (`internal/client/batch_client.py`) with dynamic micro-batching ($\le 256$) and dual-transport support (pod-local POSIX shared memory vs remote batched gRPC with pod-boundary validation).
+  - Built comprehensive test suite with 88 passing tests across unit and integration suites (`test/unit/test_kserve_codec.py`, `test/unit/test_grpc_pool.py`, `test/unit/test_circuit_breaker.py`, `test/unit/test_search_client.py`, `test/unit/test_batch_client.py`, `test/integration/test_orchestrator_integration.py`).
+  - Synchronized documentation in `.ai/doc-api.md`, OpenAPI specification in `api/openapi/openapi.json` (v1.1.0), and roadmap in `.ai/progress-tracker.md`.
 
 - **Phase 1 & Phase 2 Full Implementation Session**:
   - Implemented out-of-band operational ASGI server (`internal/server/probe_server.py`, `internal/config/settings.py`) with `/healthz`, `/ready`, `/metrics`, `/api/docs` and active VRAM headroom guarding (>85% utilization / >20 GiB static threshold shedding via HTTP 503).
