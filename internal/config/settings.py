@@ -53,6 +53,8 @@ class ServingSettings(BaseSettings):
     """Runtime microservice settings for operational server and Triton integration."""
 
     model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
         env_prefix="RAG_SERVING_",
         case_sensitive=False,
         extra="ignore",
@@ -81,16 +83,16 @@ class ServingSettings(BaseSettings):
         description="Internal gRPC endpoint for Triton KServe v2 inference.",
     )
     online_embed_grpc_url: str = Field(
-        default="localhost:8001",
-        description="Endpoint for online embedding pool Triton gRPC service.",
+        default="",
+        description="Endpoint for online embedding pool Triton gRPC service (defaults to triton_grpc_url).",
     )
     online_rerank_grpc_url: str = Field(
-        default="localhost:8001",
-        description="Endpoint for online reranker pool Triton gRPC service.",
+        default="",
+        description="Endpoint for online reranker pool Triton gRPC service (defaults to triton_grpc_url).",
     )
     batch_ingest_grpc_url: str = Field(
-        default="localhost:8001",
-        description="Endpoint for batch ingestion pool Triton gRPC service.",
+        default="",
+        description="Endpoint for batch ingestion pool Triton gRPC service (defaults to triton_grpc_url).",
     )
 
     max_queue_delay_microseconds: int = Field(
@@ -161,6 +163,13 @@ class ServingSettings(BaseSettings):
         description="Structured logging verbosity level (DEBUG, INFO, WARNING, ERROR).",
     )
 
+    def __init__(
+        self,
+        _env_file: str | None = ".env",
+        **values: Any,
+    ) -> None:
+        super().__init__(_env_file=_env_file, **values)
+
     @model_validator(mode="before")
     @classmethod
     def apply_pool_defaults_if_not_explicit(cls, data: Any) -> Any:
@@ -177,10 +186,15 @@ class ServingSettings(BaseSettings):
         else:
             pool = pool_type_raw
 
-        if "max_queue_delay_microseconds" not in data:
+        # Convert empty strings from .env into None so optional fields and defaults apply cleanly
+        for key, value in list(data.items()):
+            if value == "":
+                data[key] = None
+
+        if not data.get("max_queue_delay_microseconds"):
             data["max_queue_delay_microseconds"] = POOL_MAX_QUEUE_DELAY_US.get(pool, 2000)
 
-        if "max_batch_size" not in data:
+        if not data.get("max_batch_size"):
             data["max_batch_size"] = POOL_MAX_BATCH_SIZE.get(pool, 32)
 
         if "models_expected" not in data:
@@ -202,6 +216,11 @@ class ServingSettings(BaseSettings):
                     "dense_embedder_trt",
                     "text_tokenizer",
                 ]
+
+        triton_grpc = data.get("triton_grpc_url") or "localhost:8001"
+        for field in ("online_embed_grpc_url", "online_rerank_grpc_url", "batch_ingest_grpc_url"):
+            if not data.get(field):
+                data[field] = triton_grpc
 
         return data
 

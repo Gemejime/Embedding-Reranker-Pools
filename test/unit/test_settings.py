@@ -16,7 +16,7 @@ from internal.config.settings import (
 
 class TestServingSettings(unittest.TestCase):
     def test_online_embedding_defaults(self) -> None:
-        settings = ServingSettings(pool_type=PoolType.ONLINE_EMBEDDING)
+        settings = ServingSettings(_env_file=None, pool_type=PoolType.ONLINE_EMBEDDING)
         self.assertEqual(settings.pool_type, PoolType.ONLINE_EMBEDDING)
         self.assertEqual(
             settings.max_queue_delay_microseconds,
@@ -27,7 +27,7 @@ class TestServingSettings(unittest.TestCase):
         self.assertIn("dense_embedder_trt", settings.models_expected)
 
     def test_online_reranker_defaults(self) -> None:
-        settings = ServingSettings(pool_type=PoolType.ONLINE_RERANKER)
+        settings = ServingSettings(_env_file=None, pool_type=PoolType.ONLINE_RERANKER)
         self.assertEqual(settings.pool_type, PoolType.ONLINE_RERANKER)
         self.assertEqual(settings.max_queue_delay_microseconds, 4000)
         self.assertEqual(settings.max_batch_size, 32)
@@ -35,14 +35,14 @@ class TestServingSettings(unittest.TestCase):
         self.assertIn("cross_encoder_trt", settings.models_expected)
 
     def test_batch_ingestion_defaults(self) -> None:
-        settings = ServingSettings(pool_type=PoolType.BATCH_INGESTION)
+        settings = ServingSettings(_env_file=None, pool_type=PoolType.BATCH_INGESTION)
         self.assertEqual(settings.pool_type, PoolType.BATCH_INGESTION)
         self.assertEqual(settings.max_queue_delay_microseconds, 50000)
         self.assertEqual(settings.max_batch_size, 256)
         self.assertIn("batch_embedder_ensemble", settings.models_expected)
 
     def test_vram_and_headroom_constants(self) -> None:
-        settings = ServingSettings()
+        settings = ServingSettings(_env_file=None)
         # 24 GiB total capacity
         self.assertEqual(settings.vram_capacity_bytes, 24 * 1024 * 1024 * 1024)
         self.assertEqual(settings.vram_capacity_bytes, DEFAULT_VRAM_CAPACITY_BYTES)
@@ -107,7 +107,7 @@ class TestServingSettings(unittest.TestCase):
             self.assertEqual(settings.log_level, "DEBUG")
 
     def test_default_security_and_tls_settings(self) -> None:
-        settings = ServingSettings()
+        settings = ServingSettings(_env_file=None)
         self.assertFalse(settings.grpc_tls_enabled)
         self.assertIsNone(settings.grpc_ca_cert_path)
         self.assertIsNone(settings.grpc_client_cert_path)
@@ -115,6 +115,28 @@ class TestServingSettings(unittest.TestCase):
         self.assertIsNone(settings.grpc_server_name_override)
         self.assertIsNone(settings.api_key)
         self.assertEqual(settings.log_level, "INFO")
+
+    def test_triton_grpc_url_pool_inheritance(self) -> None:
+        """Verify that when triton_grpc_url is changed, all pools inherit it unless specifically overridden."""
+        settings = ServingSettings(
+            _env_file=None,
+            triton_grpc_url="custom-triton.internal:8001",
+        )
+        self.assertEqual(settings.triton_grpc_url, "custom-triton.internal:8001")
+        self.assertEqual(settings.online_embed_grpc_url, "custom-triton.internal:8001")
+        self.assertEqual(settings.online_rerank_grpc_url, "custom-triton.internal:8001")
+        self.assertEqual(settings.batch_ingest_grpc_url, "custom-triton.internal:8001")
+
+        # Specific pool override is respected while others inherit base
+        override_settings = ServingSettings(
+            _env_file=None,
+            triton_grpc_url="custom-triton.internal:8001",
+            online_rerank_grpc_url="dedicated-rerank.internal:8001",
+        )
+        self.assertEqual(override_settings.triton_grpc_url, "custom-triton.internal:8001")
+        self.assertEqual(override_settings.online_embed_grpc_url, "custom-triton.internal:8001")
+        self.assertEqual(override_settings.online_rerank_grpc_url, "dedicated-rerank.internal:8001")
+        self.assertEqual(override_settings.batch_ingest_grpc_url, "custom-triton.internal:8001")
 
 
 if __name__ == "__main__":

@@ -91,6 +91,9 @@
   - Implemented secure SSL channel creation in `TritonGRPCChannelPool` (`internal/client/grpc_pool.py`) supporting CA certificates, mTLS client credentials, and SNI target overrides.
   - Hardened out-of-band operational ASGI probe server (`internal/server/probe_server.py`) with optional Bearer / API-Key authentication for `/metrics`.
   - Added unit test suites in `test/unit/test_settings.py`, `test/unit/test_grpc_pool.py`, and `test/unit/test_probe_server.py` expanding test suite to 116 passing tests.
+  - Enabled automatic `.env` file ingestion in Pydantic `ServingSettings` via `env_file=".env"` and typed constructor with `_env_file` override support.
+  - Configured automatic endpoint inheritance in `TritonGRPCChannelPool` and `ServingSettings`: modifying `RAG_SERVING_TRITON_GRPC_URL` automatically cascades across Online Embedding, Online Reranker, and Batch Ingestion pools unless a pool is explicitly overridden.
+  - Added unit test suite `test_triton_grpc_url_pool_inheritance` in `test/unit/test_settings.py` expanding test suite to 117 passing tests with 100% clean Ruff and strict Mypy validation.
   - Synchronized documentation in `README.md`, `.ai/doc-api.md`, and `api/openapi/openapi.json`.
 
 - **Architecture Specification & Microservice Documentation Session**:

@@ -45,13 +45,19 @@ class TritonGRPCChannelPool:
         self._settings = settings or get_settings()
         self._targets: dict[PoolType, str] = {
             PoolType.ONLINE_EMBEDDING: self._resolve_target(
-                embedding_target or self._settings.online_embed_grpc_url
+                embedding_target
+                or self._settings.online_embed_grpc_url
+                or self._settings.triton_grpc_url
             ),
             PoolType.ONLINE_RERANKER: self._resolve_target(
-                reranker_target or self._settings.online_rerank_grpc_url
+                reranker_target
+                or self._settings.online_rerank_grpc_url
+                or self._settings.triton_grpc_url
             ),
             PoolType.BATCH_INGESTION: self._resolve_target(
-                batch_target or self._settings.batch_ingest_grpc_url
+                batch_target
+                or self._settings.batch_ingest_grpc_url
+                or self._settings.triton_grpc_url
             ),
         }
         self._options = list(options if options is not None else DEFAULT_GRPC_OPTIONS)
