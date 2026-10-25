@@ -130,8 +130,38 @@ service GRPCInferenceService {
   rpc ModelMetadata(ModelMetadataRequest) returns (ModelMetadataResponse);
   rpc ModelInfer(ModelInferRequest) returns (ModelInferResponse);
   rpc SystemSharedMemoryRegister(SystemSharedMemoryRegisterRequest) returns (SystemSharedMemoryRegisterResponse);
+  rpc SystemSharedMemoryStatus(SystemSharedMemoryStatusRequest) returns (SystemSharedMemoryStatusResponse);
   rpc SystemSharedMemoryUnregister(SystemSharedMemoryUnregisterRequest) returns (SystemSharedMemoryUnregisterResponse);
 }
+
+message SystemSharedMemoryRegisterRequest {
+  string name = 1;
+  string key = 2;
+  uint64 offset = 3;
+  uint64 byte_size = 4;
+}
+
+message SystemSharedMemoryRegisterResponse {}
+
+message SystemSharedMemoryStatusRequest {
+  string name = 1;
+}
+
+message SystemSharedMemoryStatusResponse {
+  message RegionStatus {
+    string name = 1;
+    string key = 2;
+    uint64 offset = 3;
+    uint64 byte_size = 4;
+  }
+  map<string, RegionStatus> regions = 1;
+}
+
+message SystemSharedMemoryUnregisterRequest {
+  string name = 1;
+}
+
+message SystemSharedMemoryUnregisterResponse {}
 
 message ModelMetadataResponse {
   message TensorMetadata {
@@ -538,7 +568,7 @@ Exports Hugging Face models to dynamic-axis ONNX computation graphs:
   - Inputs: `input_ids`, `attention_mask` (dynamic `[batch_size, sequence_length]`).
   - Output: `embeddings` (dynamic `[batch_size, 768]`).
 - **Cross-Encoder Reranker (`--model-type reranker`)**:
-  - Inputs: `input_ids`, `attention_mask`, `token_type_ids` (dynamic `[batch_size, sequence_length]`).
+  - Inputs: `input_ids`, `attention_mask` (dynamic `[batch_size, sequence_length]`).
   - Output: `logits` (dynamic `[batch_size, 1]`).
 - **Flags**: `--model-name-or-path`, `--output-path`, `--opset-version 17`, `--dry-run`.
 

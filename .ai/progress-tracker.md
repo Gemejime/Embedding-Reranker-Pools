@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **Phase**: **Phase 1: TensorRT FP16 Serialization & C++ Tokenization**, **Phase 2: Decoupled Pool Configuration & Dynamic Batching**, **Phase 3: Direct Client Integration & Native Circuit Breaking**, and **Phase 4: Cluster Load Sweeps, Chaos & Autoscaling** (COMPLETED)
+- **Phase**: **Phase 1: TensorRT FP16 Serialization & Ensemble Pipelines** (Delivered; native in-engine C++ tokenization pending), **Phase 2: Decoupled Pool Configuration & Dynamic Batching** (COMPLETED), **Phase 3: Direct Client Integration & Native Circuit Breaking** (COMPLETED), and **Phase 4: Cluster Load Sweeps, Chaos & Autoscaling** (COMPLETED)
 - **Current Goal**: Maintenance, continuous profiling, and operational production serving.
 
 ---

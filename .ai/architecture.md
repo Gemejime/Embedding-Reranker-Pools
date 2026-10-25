@@ -78,7 +78,7 @@ Aligned with *Production Grade Backend Concepts*:
     - Eliminates Python GIL stalls, unhandled exceptions, and memory leaks.
 - **Backpressure & Throttling**:
   - Dynamic batching wait times are bounded by `max_queue_delay_microseconds` to limit micro-batch accumulation delay prior to execution without autonomously rejecting requests.
-  - Saturated queues enforce an explicit overload policy (`default_queue_policy` with `timeout_action: REJECT` and `max_queue_size`), returning `RESOURCE_EXHAUSTED` (gRPC code 8) or HTTP 429 status codes under queue saturation to prevent cascading failure and trigger upstream RRF fallback.
+  - Saturated queues enforce an explicit overload policy (`default_queue_policy` with `timeout_action: REJECT` and `max_queue_size`), returning `RESOURCE_EXHAUSTED` (gRPC status code 8 or HTTP 503 natively, translated to HTTP 429 when routed through API ingress gateways) under queue saturation to prevent cascading failure and trigger upstream RRF fallback.
 - **Idempotency**:
   - Model inference operations are purely deterministic mathematical transformations; identical input payloads yield identical tensor representations.
 

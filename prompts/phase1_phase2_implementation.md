@@ -18,7 +18,7 @@ The target microservice is `rag-inference-serving`, providing horizontally scala
   - **Operational Endpoints**: `GET /healthz` (liveness), `GET /ready` (readiness), `GET /metrics` (Prometheus), `GET /docs`, `GET /redoc`, `GET /api/docs`, `GET /openapi.json`.
   - **Active Readiness & Headroom Guard**:
     - Queries Triton's internal health endpoint (`http://localhost:8000/v2/health/ready`).
-    - Monitors GPU VRAM memory usage; if active VRAM exceeds 85% ($>20.4\text{ GiB}$) or static engine allocation exceeds $\le 20\text{ GiB}$ ($83.3\%$), `/ready` returns HTTP 503 (`Service Unavailable`) to trigger automated traffic shedding.
+    - Monitors GPU VRAM memory usage; if active VRAM exceeds 85% ($>20.4\text{ GiB}$) or static engine allocation exceeds the $20\text{ GiB}$ static ceiling ($83.3\%$), `/ready` returns HTTP 503 (`Service Unavailable`) to trigger automated traffic shedding.
   - **Structured Secured Logging**: Integrated with `internal/logging/secured_logger.py` with RFC 7807/9457 error formatting and zero customer query/chunk text emission.
 
 ### 2. Model & Tokenizer Serialization Scripts (`scripts/export_onnx.py`, `scripts/export_tokenizer.py`, `scripts/build_trt_engine.sh`)
@@ -48,7 +48,7 @@ The target microservice is `rag-inference-serving`, providing horizontally scala
   - Checks target host and memory segment visibility (refusing non-localhost / cross-pod communication).
   - Throws `PodBoundaryViolationError` if cross-pod or cross-node IPC is attempted, forcing remote callers to use batched gRPC over HTTP/2.
 - **Triton KServe v2 IPC Protocol**:
-  - Generates Triton System Shared Memory registration payloads (`/v2/systemsharedmemory/register`).
+  - Generates Triton System Shared Memory HTTP registration payloads (`POST /v2/systemsharedmemory/region/{REGION_NAME}/register`), distinguished from the gRPC `SystemSharedMemoryRegister` method.
   - Provides deterministic context managers for safe `shm_open`, `mmap`, `munmap`, and `shm_unlink` to prevent kernel memory leaks.
 
 ### 5. Declarative Helm Deployments (`deployments/helm/`)
