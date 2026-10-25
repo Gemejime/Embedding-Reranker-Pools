@@ -708,7 +708,7 @@ The benchmark harness validates all calibrated SLIs/SLOs across isolated GPU tie
 ### B. Chaos & Resilience Testing Protocols (`test/chaos/`)
 
 1. **Queue Saturation & Native Backpressure (`test/chaos/test_queue_saturation_backpressure.py`)**:
-   - Saturates dynamic batching queues beyond capacity, confirming Triton returns `RESOURCE_EXHAUSTED` (gRPC status 8) or HTTP 429.
+   - Saturates dynamic batching queues beyond capacity, confirming Triton returns `RESOURCE_EXHAUSTED` (gRPC status 8).
    - Verifies client circuit breaker trips to `OPEN`, immediately returning deterministic un-reranked RRF scores ($RRF(d) = 1.0 / (60.0 + rank(d))$) without cascading failures.
    - Validates complete 3-state transition: `CLOSED` $\rightarrow$ `OPEN` $\rightarrow$ `HALF_OPEN` $\rightarrow$ `CLOSED`.
    - Confirms secured logging under failure conditions: zero query or passage payloads emitted to error logs.
@@ -729,7 +729,7 @@ The benchmark harness validates all calibrated SLIs/SLOs across isolated GPU tie
 ### C. Calibrated KEDA Autoscaling Triggers (`deployments/helm/`)
 Autoscaling rules evaluate **average queue delay per request** rather than raw counter rates:
 
-$$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{triton\_queue\_duration\_microseconds}[\text{1m}]))}{\text{clamp\_min}(\sum(\text{rate}(\text{triton\_inference\_count}[\text{1m}])), 1)}$$
+$$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{nv\_inference\_queue\_duration\_us}[\text{1m}]))}{\text{clamp\_min}(\sum(\text{rate}(\text{nv\_inference\_count}[\text{1m}])), 0.001)}$$
 
 - **Online Embedding Pool (`values-online-embed.yaml`)**:
   - Min/Max Replicas: 4–8.
@@ -742,7 +742,7 @@ $$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{triton\_q
 - **Batch Ingestion Pool (`values-batch-ingestion.yaml`)**:
   - Min/Max Replicas: 12–16.
   - Scale Trigger: Kafka consumer group lag threshold $10{,}000$ chunks.
-  - Warning Alert: Backlog $> 500{,}000$ chunks at 16 spot node ceiling.
+  - Warning Alert: Backlog $> 500{,}000$ chunks at 16-node spot ceiling.
 
 ### D. GitOps ArgoCD Multi-Pool Continuous Delivery (`deployments/argocd/`)
 
@@ -754,10 +754,11 @@ $$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{triton\_q
    - Configures automated sync (`prune: true`, `selfHeal: true`), namespace creation (`CreateNamespace=true`), and health check status tracking for Triton probes (`/healthz`, `/ready`) and KEDA `ScaledObject` status.
 
 2. **Standalone Application CRDs**:
-   - `application-online-embed.yaml`, `application-online-rerank.yaml`, `application-batch-ingestion.yaml` for environment-specific deployments.
+   - `application-online-embed.yaml`, `application-online-rerank.yaml`, `application-batch-ingestion.yaml` for environment-specific deployments where ApplicationSet controller is not installed.
 
-3. **Canary Progressive Rollout (`deployments/argocd/rollout-canary.yaml`)**:
-   - Manages zero-downtime progressive rollouts of TensorRT FP16 engine updates (`model.plan`) with traffic shifting (20% $\rightarrow$ 50% $\rightarrow$ 100%) and automatic rollback upon error rate or latency breaches.
+3. **Canary Progressive Rollout & AnalysisTemplate (`deployments/argocd/`)**:
+   - `rollout-canary.yaml`: Manages zero-downtime progressive rollouts of TensorRT FP16 engine updates (`model.plan`) with traffic shifting (20% $\rightarrow$ 50% $\rightarrow$ 100%) and automatic rollback upon error rate or latency breaches.
+   - `analysistemplate.yaml`: Defines `triton-vram-and-latency-check` verifying Prometheus metrics (`nv_inference_request_success` and `nv_inference_queue_duration_us`) during progressive rollout steps.
 
 ---
 

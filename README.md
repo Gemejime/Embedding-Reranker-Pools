@@ -101,7 +101,7 @@ Tokenization executes directly inside the Triton inference engine via C++ tokeni
 
 - `online_embedder_ensemble`: Chains `text_tokenizer` (512 max tokens) $\rightarrow$ `dense_embedder_trt` (FP16 `.plan` with baked mean-pooling and L2 normalization).
 - `online_reranker_ensemble`: Chains candidate pair tokenizer (`query` + `passage`, 2048 max tokens) $\rightarrow$ `cross_encoder_trt` (FP16 `.plan` producing normalized scalar logits).
-- `batch_embedder_ensemble`: Chains high-throughput tokenizer (512 max tokens) $\rightarrow$ `dense_embedder_trt` ($1 \le \text{batch} \le 256$, 50 ms delay ceiling).
+- `batch_embedder_ensemble`: Chains high-throughput tokenizer (512 max tokens) $\rightarrow$ `batch_embedder_trt` ($1 \le \text{batch} \le 256$, 50 ms delay ceiling).
 
 ---
 
@@ -177,7 +177,7 @@ cp .env.example .env
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt  # Or install dependencies via pip
+pip install -e ".[dev,triton]"
 cp .env.example .env
 ```
 
@@ -199,7 +199,7 @@ python scripts/export_tokenizer.py --model-type reranker --output-dir config/tri
 # Compile with dry-run fallback or on live GPU with trtexec
 python scripts/build_trt_engine.py --model-type online_embed --onnx-path models/dense_embedder.onnx --output-plan config/triton/online_embedding_repository/dense_embedder_trt/1/model.plan
 python scripts/build_trt_engine.py --model-type online_rerank --onnx-path models/cross_encoder.onnx --output-plan config/triton/online_reranker_repository/cross_encoder_trt/1/model.plan
-python scripts/build_trt_engine.py --model-type batch_ingest --onnx-path models/dense_embedder.onnx --output-plan config/triton/batch_ingestion_repository/dense_embedder_trt/1/model.plan
+python scripts/build_trt_engine.py --model-type batch_ingest --onnx-path models/dense_embedder.onnx --output-plan config/triton/batch_ingestion_repository/batch_embedder_trt/1/model.plan
 ```
 
 ---
@@ -262,7 +262,7 @@ make test-chaos
 ### Calibrated KEDA Prometheus Trigger
 Autoscaling scales on **average queue delay per request** rather than raw counter rates:
 ```yaml
-query: sum(rate(triton_queue_duration_microseconds{pool="online_embedding"}[1m])) / clamp_min(sum(rate(triton_inference_count{pool="online_embedding"}[1m])), 1)
+query: sum(rate(nv_inference_queue_duration_us{pool="online_embedding"}[1m])) / clamp_min(sum(rate(nv_inference_count{pool="online_embedding"}[1m])), 0.001)
 threshold: "3000"  # 3 ms trigger threshold
 ```
 

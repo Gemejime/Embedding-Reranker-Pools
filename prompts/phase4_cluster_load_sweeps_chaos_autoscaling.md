@@ -62,10 +62,10 @@ Implements failure injection, timeout enforcement, and architectural isolation t
 ### Component 3: KEDA Autoscaling Hardening & GitOps ArgoCD Integration
 1. **Calibrate Trigger Rules in Helm Overlays (`deployments/helm/`)**:
    - Update Prometheus trigger queries to evaluate **average queue delay per request** rather than raw counter rates:
-     $$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{triton\_queue\_duration\_microseconds}[\text{1m}]))}{\text{clamp\_min}(\sum(\text{rate}(\text{triton\_inference\_count}[\text{1m}])), 1)}$$
+     $$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{nv\_inference\_queue\_duration\_us}[\text{1m}]))}{\text{clamp\_min}(\sum(\text{rate}(\text{nv\_inference\_count}[\text{1m}])), 0.001)}$$
    - `values-online-embed.yaml`: Scale trigger on average queue delay $\ge 3000\mu\text{s}$ ($3\text{ ms}$); warning alert at $4\text{ ms}$ for $>1\text{ min}$.
    - `values-online-rerank.yaml`: Scale trigger on average queue delay $\ge 5000\mu\text{s}$ ($5\text{ ms}$); warning alert at $8\text{ ms}$ for $>1\text{ min}$.
-   - `values-batch-ingestion.yaml`: Scale trigger on Kafka task backlog lag threshold $10{,}000$; warning alert when backlog exceeds $500{,}000$ chunks at maximum 16 spot node ceiling.
+   - `values-batch-ingestion.yaml`: Scale trigger on Kafka task backlog lag threshold $10{,}000$; warning alert when backlog exceeds $500{,}000$ chunks at maximum 16-node spot ceiling.
 
 2. **GitOps ArgoCD Application Manifests (`deployments/argocd/`)**:
    - Establish declarative ArgoCD `ApplicationSet` (`deployments/argocd/applicationset.yaml`) utilizing a generator to continuously deliver the core `deployments/helm/` chart across the 3 decoupled GPU compute pools:

@@ -103,7 +103,17 @@
   - Overhauled [`README.md`](README.md) into a production-grade operational guide featuring architecture diagrams, streamlined folder tree matching the implementation plan, environment variable references, local setup, model export, TensorRT compilation, testing suites, KEDA autoscaling, and ArgoCD GitOps pipelines.
   - Verified clean linters (ruff), strict typecheckers (mypy), and test suites.
 
-- **Code Review Remediation & Quality Hardening Session**:
+- **Code Review Remediation & Quality Hardening Session (Part 2 - GitOps, Client Stubs & Metrics)**:
+  - Hardened `internal/client/batch_client.py` retry loops to dynamically fetch fresh gRPC stubs from `self._pool.get_stub(PoolType.BATCH_INGESTION)` on every attempt, removing stale `stub` parameter references and ensuring subsequent micro-batches use recycled channels following transient reconnects.
+  - Hardened `internal/client/grpc_pool.py` `_resolve_target` to validate that unprefixed multi-target endpoints are strictly valid IPv4 literals, preventing hostnames from erroneously receiving the `ipv4:` prefix while preserving explicit `dns:` and `ipv4:` targets.
+  - Aligned KEDA autoscaling Prometheus trigger queries across Helm overlays (`values-online-embed.yaml`, `values-online-rerank.yaml`), `README.md`, `.ai/doc-api.md`, and prompts to use standard Triton metrics `nv_inference_queue_duration_us` and `nv_inference_count` with a `clamp_min` floor of `0.001` (preventing request rate under-reporting).
+  - Synchronized ArgoCD continuous delivery manifests: removed `/spec/triggers` ignoreDifferences rule from `applicationset.yaml`, updated `targetRevision` from `HEAD` to `rag-inference-serving`, documented standalone application CRDs as alternative delivery manifests, and aligned `rollout-canary.yaml` pod template with Helm runtime specifications (securityContext, /dev/shm 8GiB emptyDir, model-cache PVC, pool labels, and immutable image tag).
+  - Provisioned missing `deployments/argocd/analysistemplate.yaml` (`triton-vram-and-latency-check`) accepting `service-name` argument to validate success rates and P99 queue latency during canary progressive traffic shifting.
+  - Corrected batch TensorRT engine compilation and ensemble references in `README.md` to point to `batch_embedder_trt`, and updated installation instructions to `pip install -e ".[dev,triton]"`.
+  - Refined benchmark harness tests (`test_multi_node_ingestion_scaling.py`, `test_online_latency_profiler.py`, `test_single_node_embedding_sweep.py`) to determine live mode strictly via `LIVE_TRITON=1`, calculate concurrent throughput wall-clock rates, and clearly delineate CI mock harness checks from physical GPU SLO assertions.
+  - Verified 118 passing tests with 100% clean Ruff linting, formatting, and strict Mypy validation.
+
+- **Code Review Remediation & Quality Hardening Session (Part 1)**:
   - Re-aligned pyproject.toml runtime dependencies: declared `grpcio>=1.84.0` matching `GRPC_GENERATED_VERSION` in compiled stubs, and aligned protobuf requirement floor (`protobuf>=7.35.1,<8.0.0`) with runtime checks in `triton_stubs_pb2.py`.
   - Updated `internal/client/batch_client.py` to raise fail-fast `RuntimeError` on empty `raw_output_contents` in SHM response, matching the gRPC transport path rather than returning placeholder zeros.
   - Updated `internal/client/grpc_pool.py` `DEFAULT_GRPC_OPTIONS` setting `grpc.keepalive_permit_without_calls = 0` to eliminate unnecessary keepalive frames while idle.
