@@ -100,10 +100,30 @@ Every worker pod (`online-embedding`, `online-reranker`, and `batch-ingestion`) 
     "/metrics": {
       "get": {
         "summary": "Prometheus Metrics Scrape",
+        "security": [
+          { "BearerAuth": [] },
+          { "ApiKeyAuth": [] },
+          {}
+        ],
         "responses": {
           "200": { "description": "Prometheus text exposition format" },
           "401": { "description": "Unauthorized - invalid or missing operational API token" }
         }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Optional bearer token authentication for operational metrics scraping."
+      },
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Optional API key header authentication for operational metrics scraping."
       }
     }
   }
@@ -762,7 +782,7 @@ $$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{nv\_infer
 
 ---
 
-## 6. Environment Variables & Operational Configuration Reference
+## 10. Environment Variables & Operational Configuration Reference
 
 The microservice reads configuration parameters via Pydantic `ServingSettings` with the `RAG_SERVING_` prefix, alongside container supervisor and test runner environment variables:
 

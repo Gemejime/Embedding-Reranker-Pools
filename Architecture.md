@@ -6,7 +6,7 @@ This document defines the production architecture for the **`rag-inference-servi
 
 ## 1. Executive Summary & Strategic Objectives
 
-The `rag-inference-serving` subsystem provides horizontally scalable, hardware-accelerated model inference across the disaggregated RAG platform. It serves dense query embeddings, sparse lexical representations, and cross-encoder rerankers for online query execution and high-density offline document ingestion workflows.
+The `rag-inference-serving` subsystem provides horizontally scalable, hardware-accelerated model inference across the disaggregated RAG platform. It serves dense query embeddings, cross-encoder rerankers, and high-density batch document embeddings for online query execution and offline document ingestion workflows (sparse lexical retrieval is handled upstream by the search orchestrator).
 
 ### Strategic Architecture Directives
 1. **Decoupled Cluster Topologies**: Physically isolate latency-sensitive online retrieval serving from high-throughput offline batch ingestion to eliminate GPU Streaming Multiprocessor (SM) thread starvation and dynamic queue thrashing.
@@ -50,7 +50,7 @@ graph TD
 | **Pool B: Online Reranker** | 1x NVIDIA L4 / A10G (24 GB) | Dedicated On-Demand | Max Batch: 32 | $\le 4\text{ ms}$ ($4000\mu\text{s}$) | Standalone P99 $\le 30\text{ ms}$ for 10–30 candidate pairs under sustained load |
 | **Batch Ingestion Pool** | 12–16x NVIDIA L4 / A10G | Preemptible Spot | Max Batch: 256 | $\le 50\text{ ms}$ ($50000\mu\text{s}$) | $2{,}500\text{--}3{,}500\text{ chunks/sec}$ per node; aggregate $\ge 40{,}000\text{ chunks/sec}$ across cluster |
 
-**Cumulative Search Budget**: Standalone dense embedding ($\le 15\text{ ms}$ client deadline) + cross-encoder reranking ($\le 35\text{ ms}$ client deadline) fits comfortably within the **$\le 40\text{ ms}$ P99 cumulative retrieval SLA**.
+**Cumulative Search Budget**: Standalone dense embedding target (P99 $\le 10\text{ ms}$, bounded by a $15\text{ ms}$ client deadline) + cross-encoder reranking target (P99 $\le 30\text{ ms}$, bounded by a $35\text{ ms}$ client deadline) defines an explicit component inference budget totaling **$\le 40\text{ ms}$ P99 cumulative inference latency** (within an end-to-end retrieval budget accounting for vector-store retrieval and sequential client timeouts up to $50\text{ ms}$).
 
 ---
 
@@ -173,7 +173,7 @@ The microservice architecture maps strictly to the **5 Production Grade Backend 
    - Docker image (`deployments/docker/Dockerfile.triton`) runs as unprivileged user `USER 1000:1000`.
    - Read-only root filesystem with explicit `/tmp/triton` and `/dev/shm` ephemeral mounts.
 2. **12-Factor Configuration & Secrets Decoupling**:
-   - Microservice configuration is managed via [`.env.example`](file:///c:/Users/ANIK/Desktop/Gemejime/Embedding%20&%20Reranker%20Pools/.env.example) and Pydantic `ServingSettings` with the `RAG_SERVING_` namespace (`internal/config/settings.py`).
+   - Microservice configuration is managed via [`.env.example`](.env.example) and Pydantic [`ServingSettings`](internal/config/settings.py) with the `RAG_SERVING_` namespace.
    - No credentials, tokens, or private keys are baked into images or stored in git.
 3. **Secured Structured JSON Logging (`internal/logging/secured_logger.py`)**:
    - Outputs machine-parseable JSON lines with standardized correlation fields (`request_id`, `model_name`, `pool_type`, `batch_size`, `latency_ms`).

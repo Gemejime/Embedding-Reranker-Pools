@@ -85,6 +85,17 @@
 
 ## Session History & Change Log
 
+- **Code Review Hardening & Spec Alignment Session**:
+  - Hardened gRPC client TLS credential setup (`internal/client/grpc_pool.py`) by letting CA, client key, and client certificate read errors propagate directly rather than catching and continuing with weaker credentials.
+  - Enforced mutual TLS (mTLS) configuration parity in `ServingSettings` (`internal/config/settings.py`) validating that `grpc_client_cert_path` and `grpc_client_key_path` are either both set or both unset.
+  - Scoped empty-string conversion in `ServingSettings` to nullable fields (`grpc_ca_cert_path`, `grpc_client_cert_path`, `grpc_client_key_path`, `grpc_server_name_override`, `api_key`), preserving default behavior and validation for non-nullable settings.
+  - Strengthened `/metrics` authentication in ASGI probe server (`internal/server/probe_server.py`) using constant-time `hmac.compare_digest` with UTF-8 byte encoding (preventing TypeErrors on non-ASCII headers) and added `WWW-Authenticate: Bearer` response header on 401 Unauthorized errors.
+  - Registered `BearerAuth` and `ApiKeyAuth` security schemes under `components.securitySchemes` in `api/openapi/openapi.json`, `internal/server/probe_server.py`, and `.ai/doc-api.md`, attaching optional authentication to `/metrics` with unauthenticated fallback.
+  - Clarified `rag-inference-serving` responsibilities in `Architecture.md` (sparse retrieval is handled upstream by search orchestrator) and defined explicit component search budgets totaling 40 ms P99 cumulative inference latency.
+  - Fixed section numbering in `.ai/doc-api.md` so Environment Variables reference is Section 10 after Section 9 (Cluster Load Sweeps).
+  - Quoted `TRITON_ARGS` in `.env.example` and `.env` for clean dotenv parsing, and replaced machine-specific file URLs with repository-relative paths in `README.md` and `Architecture.md`.
+  - Added unit test suites in `test/unit/test_settings.py`, `test/unit/test_grpc_pool.py`, and `test/unit/test_probe_server.py` expanding test suite to 119 passing tests.
+
 - **Production Secrets, mTLS & Telemetry Hardening Session**:
   - Overhauled `.env.example` and `.env` across 14 comprehensive sections including: gRPC Transport Security & Mutual TLS (`RAG_SERVING_GRPC_TLS_ENABLED`, `RAG_SERVING_GRPC_CA_CERT_PATH`, `RAG_SERVING_GRPC_CLIENT_CERT_PATH`, `RAG_SERVING_GRPC_CLIENT_KEY_PATH`, `RAG_SERVING_GRPC_SERVER_NAME_OVERRIDE`), Operational Server Security (`RAG_SERVING_API_KEY`, `RAG_SERVING_LOG_LEVEL`), KEDA Autoscaling Triggers & Telemetry Secrets (`PROMETHEUS_SERVER_ADDRESS`, `PROMETHEUS_BEARER_TOKEN`, `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_CONSUMER_GROUP`, `KAFKA_TOPIC`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD`, `KAFKA_SASL_MECHANISM`, `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SSL_CA_LOCATION`), and Model Registry & Cloud Storage Credentials (`HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_ENDPOINT_URL`, `MODEL_REGISTRY_STORAGE_URI`).
   - Extended Pydantic `ServingSettings` in `internal/config/settings.py` with full validation for TLS and operational security fields.

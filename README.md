@@ -118,7 +118,7 @@ Tokenization executes directly inside the Triton inference engine via C++ tokeni
 
 ## 5. Environment Configuration
 
-All operational and pool settings are managed via 12-factor environment variables backed by Pydantic `ServingSettings` in [`internal/config/settings.py`](file:///c:/Users/ANIK/Desktop/Gemejime/Embedding%20&%20Reranker%20Pools/internal/config/settings.py):
+All operational and pool settings are managed via 12-factor environment variables backed by Pydantic `ServingSettings` in [`internal/config/settings.py`](internal/config/settings.py):
 
 ```bash
 # Copy template and customize for target pool

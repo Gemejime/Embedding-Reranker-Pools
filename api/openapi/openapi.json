@@ -77,6 +77,15 @@
         "summary": "Prometheus Metrics Scrape",
         "description": "Exposes Triton queue duration, latency, and GPU VRAM saturation metrics in Prometheus exposition format.",
         "operationId": "getMetrics",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          },
+          {}
+        ],
         "responses": {
           "200": {
             "description": "Prometheus text exposition format",
@@ -96,6 +105,19 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Optional bearer token authentication for operational metrics scraping."
+      },
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Optional API key header authentication for operational metrics scraping."
+      }
+    },
     "schemas": {
       "HealthStatus": {
         "type": "object",
