@@ -728,6 +728,34 @@ $$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{triton\_q
 3. **Canary Progressive Rollout (`deployments/argocd/rollout-canary.yaml`)**:
    - Manages zero-downtime progressive rollouts of TensorRT FP16 engine updates (`model.plan`) with traffic shifting (20% $\rightarrow$ 50% $\rightarrow$ 100%) and automatic rollback upon error rate or latency breaches.
 
+---
 
+## 6. Environment Variables & Operational Configuration Reference
 
+The microservice reads configuration parameters via Pydantic `ServingSettings` with the `RAG_SERVING_` prefix, alongside container supervisor and test runner environment variables:
 
+| Variable Name | Type | Default Value | Description & Constraints |
+| :--- | :--- | :--- | :--- |
+| `RAG_SERVING_POOL_TYPE` | `string` | `online_embedding` | Hardware compute pool identity: `online_embedding`, `online_reranker`, `batch_ingestion`. |
+| `RAG_SERVING_SERVER_HOST` | `string` | `0.0.0.0` | Bind host interface for out-of-band operational ASGI server. |
+| `RAG_SERVING_SERVER_PORT` | `integer` | `8080` | HTTP port for operational server hosting `/healthz`, `/ready`, `/metrics`, `/docs`, `/redoc`, `/api/docs`, `/openapi.json`. |
+| `RAG_SERVING_TRITON_HTTP_URL` | `string` | `http://localhost:8000` | Internal Triton HTTP endpoint for KServe v2 health and readiness checks. |
+| `RAG_SERVING_TRITON_GRPC_URL` | `string` | `localhost:8001` | Internal Triton gRPC endpoint for KServe v2 binary tensor inference. |
+| `RAG_SERVING_ONLINE_EMBED_GRPC_URL` | `string` | `localhost:8001` | Upstream channel target for Online Embedding Pool (Pool A: NVIDIA L4/A10G On-Demand). |
+| `RAG_SERVING_ONLINE_RERANK_GRPC_URL` | `string` | `localhost:8001` | Upstream channel target for Online Reranker Pool (Pool B: NVIDIA L4/A10G On-Demand). |
+| `RAG_SERVING_BATCH_INGEST_GRPC_URL` | `string` | `localhost:8001` | Upstream channel target for Batch Ingestion Pool (Preemptible Spot Nodes). |
+| `RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS` | `integer` | Pool-calibrated | Triton queue delay timeout in $\mu s$ (`2000` for online embedding, `4000` for online reranker, `50000` for batch ingestion). |
+| `RAG_SERVING_MAX_BATCH_SIZE` | `integer` | Pool-calibrated | Dynamic batch size ceiling (`32` for online embedding/reranker, `256` for batch ingestion). |
+| `RAG_SERVING_VRAM_CAPACITY_BYTES` | `integer` | `25769803776` | Total GPU VRAM capacity in bytes (24 GiB NVIDIA L4/A10G memory layout). |
+| `RAG_SERVING_MAX_STATIC_VRAM_BYTES` | `integer` | `21474836480` | Ceiling for aggregate static model allocations in bytes ($\le 20\text{ GiB}$, ~83.33%). |
+| `RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO` | `float` | `0.85` | Active runtime VRAM threshold triggering HTTP 503 traffic shedding ($>85\%$ or $>20.4\text{ GiB}$). |
+| `RAG_SERVING_MODELS_EXPECTED` | `JSON array` | Pool-calibrated | List of initialized model engine names required for `/ready` probe to report ready status. |
+| `RAG_SERVING_SHM_BASE_PATH` | `string` | `/dev/shm` | Mount path for pod-scoped POSIX shared memory volume (`emptyDir` RAM mount). |
+| `MODEL_REPOSITORY` | `string` | `/models` | Directory path containing compiled Triton model repositories. |
+| `TRITON_ARGS` | `string` | `--model-repository=/models --strict-model-config=true --log-verbose=0` | Process supervisor startup flags for `tritonserver`. |
+| `PYTHONUNBUFFERED` | `integer` | `1` | Forces unbuffered stdout/stderr output for real-time JSON log shipping. |
+| `PYTHONDONTWRITEBYTECODE` | `integer` | `1` | Prevents writing `.pyc` files inside containers. |
+| `LIVE_TRITON` | `integer` | `0` | Controls live vs. dry-run Triton execution during automated benchmark sweeps (`0` = mock, `1` = live). |
+| `TRITON_ONLINE_GRPC_TARGET` | `string` | `localhost:8001` | Target endpoint for online latency profiler benchmark suite. |
+| `TRITON_BATCH_GRPC_TARGET` | `string` | `localhost:8001` | Target endpoint for single-node batch sweep benchmark suite. |
+| `TRITON_CLUSTER_ENDPOINTS` | `string` | `localhost:8001` | Comma-separated cluster endpoints for multi-node ingestion scaling benchmarks. |

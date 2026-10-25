@@ -85,7 +85,15 @@
 
 ## Session History & Change Log
 
+- **Environment Configuration Template & Validation Session**:
+  - Authored comprehensive environment configuration template (`.env.example`) defining all operational parameters across 10 structured sections: Service Identity & Topology (`RAG_SERVING_POOL_TYPE`), Out-of-band ASGI Server (`RAG_SERVING_SERVER_HOST`, `RAG_SERVING_SERVER_PORT`), Triton KServe v2 URLs, Decoupled Pool gRPC Targets, Calibrated Dynamic Batching Ceilings (`RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS`, `RAG_SERVING_MAX_BATCH_SIZE`), VRAM Headroom Guards (`RAG_SERVING_VRAM_CAPACITY_BYTES`, `RAG_SERVING_MAX_STATIC_VRAM_BYTES`, `RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO`), Expected Model Engines (`RAG_SERVING_MODELS_EXPECTED`), POSIX SHM Mounts (`RAG_SERVING_SHM_BASE_PATH`), Triton Container Supervisor (`MODEL_REPOSITORY`, `TRITON_ARGS`), and Benchmark Test Orchestration (`LIVE_TRITON`, `TRITON_ONLINE_GRPC_TARGET`, `TRITON_BATCH_GRPC_TARGET`, `TRITON_CLUSTER_ENDPOINTS`).
+  - Added unit test coverage in `test/unit/test_settings.py` verifying dynamic environment variable parsing and override behavior.
+  - Documented Section 6 (Environment Variables & Operational Configuration Reference) in `.ai/doc-api.md`.
+  - Updated `README.md` local environment setup with `.env` copy instructions.
+  - Verified 100% test pass rate across test suite and confirmed ruff lint/formatting compliance.
+
 - **Phase 4 Cluster Load Sweeps, Chaos & Autoscaling Session**:
+
   - Implemented comprehensive benchmark suite (`test/benchmark/test_single_node_embedding_sweep.py`, `test/benchmark/test_multi_node_ingestion_scaling.py`, `test/benchmark/test_online_latency_profiler.py`) validating single-node throughput (2,500–3,500 chunks/sec), multi-node cluster scaling (&ge; 40,000 chunks/sec across 12–16 spot nodes), and online P99 retrieval bounds (&le; 10 ms embedding, &le; 30 ms reranking, &le; 40 ms cumulative).
   - Implemented chaos and resilience suite (`test/chaos/test_queue_saturation_backpressure.py`, `test/chaos/test_cuda_stall_injection.py`, `test/chaos/test_hardware_isolation.py`, `test/chaos/test_spot_eviction.py`) testing Triton native backpressure, GPU latency spike injection, physical hardware isolation, and spot termination failover.
   - Hardened KEDA autoscaling Prometheus trigger queries evaluating average queue delay per request and Kafka consumer lag thresholds.

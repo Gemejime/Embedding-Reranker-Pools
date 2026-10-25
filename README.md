@@ -71,7 +71,11 @@ Tokenization executes directly inside the Triton inference engine via C++ tokeni
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt  # Or install dependencies via pip
+
+# Configure environment variables from template
+cp .env.example .env  # On Windows: copy .env.example .env
 ```
+
 
 ### Export ONNX & Tokenizers
 ```bash
