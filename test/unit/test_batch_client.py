@@ -114,6 +114,33 @@ class TestBatchClient(unittest.TestCase):
         self.mock_batch_stub.SystemSharedMemoryUnregister.assert_called_once()
         mock_region.release.assert_called_once()
 
+    def test_transient_failure_retries_and_reconnects(self) -> None:
+        import grpc
+
+        # First call raises UNAVAILABLE (simulating spot node termination), second succeeds
+        err = grpc.RpcError()
+        err.code = lambda: grpc.StatusCode.UNAVAILABLE
+
+        out_bytes = pack_fp16_tensor([[0.7] * 768])
+        success_resp = ModelInferResponse(
+            model_name="batch_embedder_ensemble",
+            outputs=[InferOutputTensor(name="embeddings", shape=[1, 768], datatype="FP16")],
+            raw_output_contents=[out_bytes],
+        )
+
+        self.mock_batch_stub.ModelInfer.side_effect = [err, success_resp]
+
+        client = BatchIngestionClient(
+            pool=self.mock_pool,
+            max_batch_size=256,
+            max_retries=2,
+            backoff_seconds=0.001,
+        )
+        vectors = client.embed_chunks(["transient chunk"])
+        self.assertEqual(len(vectors), 1)
+        self.assertEqual(self.mock_batch_stub.ModelInfer.call_count, 2)
+        self.mock_pool.reconnect_channel.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

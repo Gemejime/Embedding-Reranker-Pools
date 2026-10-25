@@ -37,6 +37,9 @@ class TestHelmConfigs(unittest.TestCase):
         self.assertEqual(data["env"]["RAG_SERVING_MAX_BATCH_SIZE"], "32")
         trigger = data["autoscaling"]["triggers"][0]
         self.assertEqual(trigger["metadata"]["threshold"], "3000")
+        self.assertIn("clamp_min", trigger["metadata"]["query"])
+        self.assertIn("triton_queue_duration_microseconds", trigger["metadata"]["query"])
+        self.assertEqual(data["alerts"]["warningQueueDelayMicroseconds"], "4000")
 
     def test_online_rerank_overlay(self) -> None:
         rerank_path = os.path.join(self.helm_dir, "values-online-rerank.yaml")
@@ -48,6 +51,8 @@ class TestHelmConfigs(unittest.TestCase):
         self.assertEqual(data["env"]["RAG_SERVING_MAX_BATCH_SIZE"], "32")
         trigger = data["autoscaling"]["triggers"][0]
         self.assertEqual(trigger["metadata"]["threshold"], "5000")
+        self.assertIn("clamp_min", trigger["metadata"]["query"])
+        self.assertEqual(data["alerts"]["warningQueueDelayMicroseconds"], "8000")
 
     def test_batch_ingestion_overlay(self) -> None:
         batch_path = os.path.join(self.helm_dir, "values-batch-ingestion.yaml")
@@ -59,6 +64,7 @@ class TestHelmConfigs(unittest.TestCase):
         self.assertEqual(data["env"]["RAG_SERVING_MAX_BATCH_SIZE"], "256")
         tolerations = [t["key"] for t in data.get("tolerations", [])]
         self.assertIn("spotInstance", tolerations)
+        self.assertEqual(data["alerts"]["warningBacklogChunks"], "500000")
 
 
 if __name__ == "__main__":

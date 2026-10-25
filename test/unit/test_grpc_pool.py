@@ -111,7 +111,45 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
         # Failure case
         mock_stub.ServerLive.side_effect = Exception("Connection refused")
         self.assertFalse(pool.is_channel_ready(PoolType.ONLINE_EMBEDDING))
+        pool.close()
 
+    @patch("grpc.insecure_channel")
+    def test_multi_target_round_robin_resolution(self, mock_channel_fn: MagicMock) -> None:
+        mock_channel = MagicMock()
+        mock_channel_fn.return_value = mock_channel
+
+        pool = TritonGRPCChannelPool(
+            batch_target=["10.0.0.1:8001", "10.0.0.2:8001", "10.0.0.3:8001"]
+        )
+        target = pool.get_target(PoolType.BATCH_INGESTION)
+        self.assertEqual(target, "ipv4:10.0.0.1:8001,10.0.0.2:8001,10.0.0.3:8001")
+
+        chan = pool.get_channel(PoolType.BATCH_INGESTION)
+        self.assertEqual(chan, mock_channel)
+        self.assertEqual(pool.get_active_channel_count(), 1)
+
+        # Verify round_robin LB policy is passed in options
+        call_kwargs = mock_channel_fn.call_args[1]
+        options = call_kwargs["options"]
+        self.assertIn(("grpc.lb_policy_name", "round_robin"), options)
+        pool.close()
+
+    @patch("grpc.insecure_channel")
+    def test_reconnect_channel_recycling(self, mock_channel_fn: MagicMock) -> None:
+        mock_chan_old = MagicMock()
+        mock_chan_new = MagicMock()
+        mock_channel_fn.side_effect = [mock_chan_old, mock_chan_new]
+
+        pool = TritonGRPCChannelPool(settings=self.settings)
+        chan1 = pool.get_channel(PoolType.ONLINE_EMBEDDING)
+        self.assertEqual(chan1, mock_chan_old)
+        self.assertEqual(pool.get_active_channel_count(), 1)
+
+        # Recycle channel after synthetic failure
+        chan2 = pool.reconnect_channel(PoolType.ONLINE_EMBEDDING)
+        self.assertEqual(chan2, mock_chan_new)
+        mock_chan_old.close.assert_called_once()
+        self.assertEqual(pool.get_active_channel_count(), 1)
         pool.close()
 
 

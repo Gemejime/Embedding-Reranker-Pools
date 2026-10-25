@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rag-inference-online-embedding
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: rag-inference-online-embedding
+    app.kubernetes.io/part-of: enterprise-rag-platform
+    compute-pool: online-embedding
+    lifecycle: on-demand
+  annotations:
+    argocd.argoproj.io/health-check: |
+      health_status = {}
+      if obj.status ~= nil and obj.status.health ~= nil then
+        health_status.status = obj.status.health.status
+        health_status.message = obj.status.health.message
+      end
+      return health_status
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/enterprise-rag/rag-inference-serving.git
+    targetRevision: HEAD
+    path: deployments/helm
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-online-embed.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rag-inference-serving
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

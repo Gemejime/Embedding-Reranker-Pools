@@ -1,0 +1,54 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: rag-inference-rollout-canary
+  namespace: rag-inference-serving
+  labels:
+    app.kubernetes.io/name: rag-inference-serving
+    app.kubernetes.io/part-of: enterprise-rag-platform
+spec:
+  replicas: 4
+  strategy:
+    canary:
+      analysis:
+        templates:
+          - templateName: triton-vram-and-latency-check
+        args:
+          - name: service-name
+            value: rag-inference-serving-canary
+      steps:
+        - setWeight: 20
+        - pause: { duration: 2m }
+        - setWeight: 50
+        - pause: { duration: 3m }
+        - setWeight: 100
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rag-inference-serving
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rag-inference-serving
+    spec:
+      containers:
+        - name: triton-serving
+          image: enterprise-rag/triton-inference-serving:latest
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+              memory: 32Gi
+            requests:
+              nvidia.com/gpu: 1
+              memory: 16Gi
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5

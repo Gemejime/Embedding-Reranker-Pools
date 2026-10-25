@@ -50,6 +50,10 @@ autoscaling:
         consumerGroup: rag-batch-embedder-group
         lagThreshold: "10000"
 
+alerts:
+  warningBacklogChunks: "500000"  # Warning alert when backlog exceeds 500,000 chunks at 16 spot node ceiling
+  maxNodeCeiling: 16
+
 env:
   RAG_SERVING_POOL_TYPE: "batch_ingestion"
   RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS: "50000"

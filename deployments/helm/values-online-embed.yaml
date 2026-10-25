@@ -38,8 +38,12 @@ autoscaling:
       metadata:
         serverAddress: http://prometheus-k8s.monitoring.svc:9090
         metricName: triton_queue_duration_microseconds
-        threshold: "3000"  # Queue delay alert threshold: 3 ms (3000 us)
-        query: sum(rate(triton_queue_duration_microseconds{pool="online_embedding"}[1m]))
+        threshold: "3000"  # Scale trigger: average queue delay >= 3 ms (3000 us)
+        query: sum(rate(triton_queue_duration_microseconds{pool="online_embedding"}[1m])) / clamp_min(sum(rate(triton_inference_count{pool="online_embedding"}[1m])), 1)
+
+alerts:
+  warningQueueDelayMicroseconds: "4000"  # Warning alert at 4 ms for > 1 min
+  warningDuration: "1m"
 
 env:
   RAG_SERVING_POOL_TYPE: "online_embedding"

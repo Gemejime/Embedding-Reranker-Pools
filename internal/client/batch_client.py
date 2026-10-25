@@ -13,6 +13,8 @@ import time
 import uuid
 from collections.abc import Sequence
 
+import grpc
+
 from api.proto.v1.triton_stubs_pb2 import (
     InferInputTensor,
     InferParameter,
@@ -40,6 +42,8 @@ logger = get_secured_logger("batch-client")
 
 DEFAULT_BATCH_MAX_SIZE: int = 256
 DEFAULT_BATCH_TIMEOUT_SECONDS: float = 30.0
+DEFAULT_MAX_RETRIES: int = 3
+DEFAULT_BACKOFF_SECONDS: float = 0.05
 
 
 class BatchIngestionClient:
@@ -51,12 +55,16 @@ class BatchIngestionClient:
         settings: ServingSettings | None = None,
         max_batch_size: int = DEFAULT_BATCH_MAX_SIZE,
         timeout_seconds: float = DEFAULT_BATCH_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        backoff_seconds: float = DEFAULT_BACKOFF_SECONDS,
     ) -> None:
         self._settings = settings or get_settings()
         self._pool = pool or TritonGRPCChannelPool(settings=self._settings)
         self._owns_pool = pool is None
         self._max_batch_size = max_batch_size
         self._timeout_seconds = timeout_seconds
+        self._max_retries = max_retries
+        self._backoff_seconds = backoff_seconds
 
     @property
     def pool(self) -> TritonGRPCChannelPool:
@@ -132,7 +140,7 @@ class BatchIngestionClient:
         model_name: str,
         request_id: str,
     ) -> list[list[float]]:
-        """Stream a single micro-batch over standard batched gRPC."""
+        """Stream a single micro-batch over standard batched gRPC with retry on transient errors."""
         req = build_single_text_infer_request(
             model_name=model_name,
             texts=texts,
@@ -140,12 +148,47 @@ class BatchIngestionClient:
             output_name="embeddings",
             request_id=request_id,
         )
-        resp = stub.ModelInfer(req, timeout=self._timeout_seconds)
-        if not resp.raw_output_contents:
-            raise RuntimeError(f"Missing raw_output_contents in response from {model_name}")
 
-        shape = (len(texts), 768)
-        return unpack_fp16_tensor(resp.raw_output_contents[0], shape=shape)
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                current_stub = (
+                    stub if attempt == 0 else self._pool.get_stub(PoolType.BATCH_INGESTION)
+                )
+                resp = current_stub.ModelInfer(req, timeout=self._timeout_seconds)
+                if not resp.raw_output_contents:
+                    raise RuntimeError(f"Missing raw_output_contents in response from {model_name}")
+
+                shape = (len(texts), 768)
+                return unpack_fp16_tensor(resp.raw_output_contents[0], shape=shape)
+            except Exception as exc:
+                last_exc = exc
+                is_transient = False
+                if isinstance(exc, grpc.RpcError):
+                    code = getattr(exc, "code", lambda: None)()
+                    if code in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.RESOURCE_EXHAUSTED):
+                        is_transient = True
+
+                if is_transient and attempt < self._max_retries:
+                    sleep_time = self._backoff_seconds * (2**attempt)
+                    logger.warning(
+                        "Batch ingestion call failed transiently; reconnecting and retrying",
+                        extra={
+                            "request_id": request_id,
+                            "attempt": attempt + 1,
+                            "max_retries": self._max_retries,
+                            "backoff_seconds": sleep_time,
+                            "status": "retry_backoff",
+                        },
+                    )
+                    self._pool.reconnect_channel(PoolType.BATCH_INGESTION)
+                    time.sleep(sleep_time)
+                else:
+                    raise
+
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Unexpected exit from retry loop")
 
     def _embed_micro_batch_shm(
         self,
@@ -154,71 +197,102 @@ class BatchIngestionClient:
         model_name: str,
         request_id: str,
     ) -> list[list[float]]:
-        """Execute inference using pod-local zero-copy POSIX shared memory IPC."""
-        packed_bytes = pack_string_tensor(texts)
-        shm_name = f"rag_batch_in_{uuid.uuid4().hex[:12]}"
-        region = SharedMemoryRegion(name=shm_name, size_bytes=len(packed_bytes))
-
-        try:
-            region.allocate()
-            region.write(packed_bytes)
-
-            # Register input SHM with Triton
-            reg_req = SystemSharedMemoryRegisterRequest(
-                name=region.name,
-                key=region.key,
-                offset=0,
-                byte_size=len(packed_bytes),
-            )
-            stub.SystemSharedMemoryRegister(reg_req, timeout=5.0)
+        """Execute inference using pod-local zero-copy POSIX shared memory IPC with retry."""
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            packed_bytes = pack_string_tensor(texts)
+            shm_name = f"rag_batch_in_{uuid.uuid4().hex[:12]}"
+            region = SharedMemoryRegion(name=shm_name, size_bytes=len(packed_bytes))
+            current_stub = stub if attempt == 0 else self._pool.get_stub(PoolType.BATCH_INGESTION)
 
             try:
-                # Build ModelInferRequest referencing registered SHM region
-                input_tensor = InferInputTensor(
-                    name="raw_text",
-                    datatype="BYTES",
-                    shape=[len(texts), 1],
-                )
-                input_tensor.parameters["shared_memory_region"].CopyFrom(
-                    InferParameter(string_param=region.name)
-                )
-                input_tensor.parameters["shared_memory_byte_size"].CopyFrom(
-                    InferParameter(int64_param=len(packed_bytes))
-                )
-                input_tensor.parameters["shared_memory_offset"].CopyFrom(
-                    InferParameter(int64_param=0)
-                )
+                region.allocate()
+                region.write(packed_bytes)
 
-                output_tensor = InferRequestedOutputTensor(name="embeddings")
-
-                infer_req = ModelInferRequest(
-                    model_name=model_name,
-                    id=request_id,
-                    inputs=[input_tensor],
-                    outputs=[output_tensor],
+                # Register input SHM with Triton
+                reg_req = SystemSharedMemoryRegisterRequest(
+                    name=region.name,
+                    key=region.key,
+                    offset=0,
+                    byte_size=len(packed_bytes),
                 )
+                current_stub.SystemSharedMemoryRegister(reg_req, timeout=5.0)
 
-                resp = stub.ModelInfer(infer_req, timeout=self._timeout_seconds)
-
-                if resp.raw_output_contents:
-                    shape = (len(texts), 768)
-                    return unpack_fp16_tensor(resp.raw_output_contents[0], shape=shape)
-                else:
-                    return [[0.0] * 768 for _ in range(len(texts))]
-
-            finally:
-                # Unregister input SHM from Triton
                 try:
-                    unreg_req = SystemSharedMemoryUnregisterRequest(name=region.name)
-                    stub.SystemSharedMemoryUnregister(unreg_req, timeout=5.0)
-                except Exception as unreg_exc:
-                    logger.warning(
-                        "Failed to unregister SHM region from Triton", exc_info=unreg_exc
+                    # Build ModelInferRequest referencing registered SHM region
+                    input_tensor = InferInputTensor(
+                        name="raw_text",
+                        datatype="BYTES",
+                        shape=[len(texts), 1],
+                    )
+                    input_tensor.parameters["shared_memory_region"].CopyFrom(
+                        InferParameter(string_param=region.name)
+                    )
+                    input_tensor.parameters["shared_memory_byte_size"].CopyFrom(
+                        InferParameter(int64_param=len(packed_bytes))
+                    )
+                    input_tensor.parameters["shared_memory_offset"].CopyFrom(
+                        InferParameter(int64_param=0)
                     )
 
-        finally:
-            # Deterministic memory release
-            region.release()
+                    output_tensor = InferRequestedOutputTensor(name="embeddings")
+
+                    infer_req = ModelInferRequest(
+                        model_name=model_name,
+                        id=request_id,
+                        inputs=[input_tensor],
+                        outputs=[output_tensor],
+                    )
+
+                    resp = current_stub.ModelInfer(infer_req, timeout=self._timeout_seconds)
+
+                    if resp.raw_output_contents:
+                        shape = (len(texts), 768)
+                        return unpack_fp16_tensor(resp.raw_output_contents[0], shape=shape)
+                    else:
+                        return [[0.0] * 768 for _ in range(len(texts))]
+
+                finally:
+                    # Unregister input SHM from Triton
+                    try:
+                        unreg_req = SystemSharedMemoryUnregisterRequest(name=region.name)
+                        current_stub.SystemSharedMemoryUnregister(unreg_req, timeout=5.0)
+                    except Exception as unreg_exc:
+                        logger.warning(
+                            "Failed to unregister SHM region from Triton", exc_info=unreg_exc
+                        )
+
+            except Exception as exc:
+                last_exc = exc
+                is_transient = False
+                if isinstance(exc, grpc.RpcError):
+                    code = getattr(exc, "code", lambda: None)()
+                    if code in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.RESOURCE_EXHAUSTED):
+                        is_transient = True
+
+                if is_transient and attempt < self._max_retries:
+                    sleep_time = self._backoff_seconds * (2**attempt)
+                    logger.warning(
+                        "Batch ingestion SHM call failed transiently; retrying",
+                        extra={
+                            "request_id": request_id,
+                            "attempt": attempt + 1,
+                            "max_retries": self._max_retries,
+                            "backoff_seconds": sleep_time,
+                            "status": "retry_backoff",
+                        },
+                    )
+                    self._pool.reconnect_channel(PoolType.BATCH_INGESTION)
+                    time.sleep(sleep_time)
+                else:
+                    raise
+            finally:
+                # Deterministic memory release
+                region.release()
+
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Unexpected exit from retry loop")
 
     def close(self) -> None:
         """Close pool if owned."""
