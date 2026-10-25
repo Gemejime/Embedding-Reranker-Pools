@@ -650,5 +650,84 @@ The `RerankerCircuitBreaker` protects online query latency budgets against Trito
     - **Pod-Local (`target_host="localhost"`, `use_shm=True`)**: Passes tensors via 8 GiB `/dev/shm` emptyDir using POSIX shared memory and Triton `SystemSharedMemoryRegister`.
     - **Remote Node (`target_host != "localhost"`)**: Validates pod boundaries (`validate_pod_boundary`), rejecting cross-pod SHM with `PodBoundaryViolationError` and streaming batches over HTTP/2 gRPC.
 
+---
+
+## 9. Cluster Load Sweeps, Chaos Resilience & GitOps Delivery (Phase 4)
+
+### A. Quantitative Benchmark & Load Sweeping Suite (`test/benchmark/`)
+The benchmark harness validates all calibrated SLIs/SLOs across isolated GPU tiers:
+
+1. **Single-Node Ingestion Throughput (`test/benchmark/test_single_node_embedding_sweep.py`)**:
+   - Concurrency and batch size sweeps ($N \in [1, 2, 4, 8, 16, 32, 64, 128, 256]$) with synthetic 256–512 token chunk payloads.
+   - Verifies sustained **2,500 to 3,500 chunks/sec** per NVIDIA L4/A10G instance at batch size 256 with 50 ms queue delay ceiling.
+   - Evaluates throughput and serialization efficiency delta between pod-local zero-copy `/dev/shm` IPC and remote HTTP/2 gRPC.
+   - Verifies active memory remains bounded below 85% ($< 20.4\text{ GiB}$) with zero memory leaks across sustained batch iterations.
+
+2. **Multi-Node Cluster Scaling (`test/benchmark/test_multi_node_ingestion_scaling.py`)**:
+   - Simulates horizontal cluster scaling across **12 to 16 preemptible spot GPU nodes**.
+   - Validates linear scale-out achieving **$\ge 40{,}000\text{ chunks/sec}$** aggregate cluster throughput without queue stalls, cross-worker contention, or host memory degradation.
+   - Verifies round-robin connection pool distribution across multi-instance Triton endpoints in `TritonGRPCChannelPool`.
+
+3. **Online Latency & Reranker Boundary Profiling (`test/benchmark/test_online_latency_profiler.py`)**:
+   - Executes mandatory 100-request warm-up sweep prior to latency capture to eliminate JIT compilation and CUDA allocator warmup artifacts.
+   - **Online Embedding Pool (Pool A)**: Evaluates single-sentence queries at **1,500 QPS** (batch size 1, queue delay $\le 2\text{ ms}$), asserting standalone latency **P99 $\le 10\text{ ms}$**.
+   - **Online Reranker Pool (Pool B)**: Evaluates candidate pairs (10 to 30 candidates pruned to Top-15, queue delay $\le 4\text{ ms}$), asserting latency **P99 $\le 30\text{ ms}$**.
+   - **Cumulative Search Budget**: Asserts dense embedding plus cross-encoder reranking completes within the **$\le 40\text{ ms}$ P99** cumulative search budget.
+
+### B. Chaos & Resilience Testing Protocols (`test/chaos/`)
+
+1. **Queue Saturation & Native Backpressure (`test/chaos/test_queue_saturation_backpressure.py`)**:
+   - Saturates dynamic batching queues beyond capacity, confirming Triton returns `RESOURCE_EXHAUSTED` (gRPC status 8) or HTTP 429.
+   - Verifies client circuit breaker trips to `OPEN`, immediately returning deterministic un-reranked RRF scores ($RRF(d) = 1.0 / (60.0 + rank(d))$) without cascading failures.
+   - Validates complete 3-state transition: `CLOSED` $\rightarrow$ `OPEN` $\rightarrow$ `HALF_OPEN` $\rightarrow$ `CLOSED`.
+   - Confirms secured logging under failure conditions: zero query or passage payloads emitted to error logs.
+
+2. **Synthetic CUDA Stalls & GPU Latency Spike Injection (`test/chaos/test_cuda_stall_injection.py`)**:
+   - Simulates GPU kernel stalls exceeding deadlines (15 ms embedding, 35 ms reranker).
+   - Confirms deadline enforcement (`DEADLINE_EXCEEDED`), rapid gRPC channel recycling, zero leaked channel slots, and transparent RRF fallback.
+
+3. **Hardware Isolation Validation (`test/chaos/test_hardware_isolation.py`)**:
+   - Concurrent workload simulation: floods batch ingestion pipeline at peak capacity (batch size 256, spot nodes) while concurrently running sustained 1,500 QPS online search queries on dedicated on-demand nodes.
+   - Asserts **zero latency degradation** on online retrieval P99 due to physical node group decoupling (ADR-001, ADR-002).
+   - Validates Kubernetes scheduling constraints (`nodeSelector`, `nodeAffinity`, `tolerations`) preventing cross-pool co-location.
+
+4. **Spot Node Preemption & Eviction Resilience (`test/chaos/test_spot_eviction.py`)**:
+   - Simulates Kubernetes spot instance termination signals (`SIGTERM`, node drain).
+   - Confirms batch ingestion client retry logic, connection failover, task re-queueing without chunk loss, and clean `/dev/shm` resource reclamation preventing orphaned memory segments.
+
+### C. Calibrated KEDA Autoscaling Triggers (`deployments/helm/`)
+Autoscaling rules evaluate **average queue delay per request** rather than raw counter rates:
+
+$$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{triton\_queue\_duration\_microseconds}[\text{1m}]))}{\text{clamp\_min}(\sum(\text{rate}(\text{triton\_inference\_count}[\text{1m}])), 1)}$$
+
+- **Online Embedding Pool (`values-online-embed.yaml`)**:
+  - Min/Max Replicas: 4–8.
+  - Scale Trigger: Average queue delay $\ge 3000\mu\text{s}$ ($3\text{ ms}$).
+  - Warning Alert: Delay $\ge 4000\mu\text{s}$ ($4\text{ ms}$) sustained for $> 1\text{ min}$.
+- **Online Reranker Pool (`values-online-rerank.yaml`)**:
+  - Min/Max Replicas: 4–12.
+  - Scale Trigger: Average queue delay $\ge 5000\mu\text{s}$ ($5\text{ ms}$).
+  - Warning Alert: Delay $\ge 8000\mu\text{s}$ ($8\text{ ms}$) sustained for $> 1\text{ min}$.
+- **Batch Ingestion Pool (`values-batch-ingestion.yaml`)**:
+  - Min/Max Replicas: 12–16.
+  - Scale Trigger: Kafka consumer group lag threshold $10{,}000$ chunks.
+  - Warning Alert: Backlog $> 500{,}000$ chunks at 16 spot node ceiling.
+
+### D. GitOps ArgoCD Multi-Pool Continuous Delivery (`deployments/argocd/`)
+
+1. **Declarative ApplicationSet (`deployments/argocd/applicationset.yaml`)**:
+   - Uses list generators targeting `deployments/helm` with dedicated value overlays:
+     - `rag-inference-online-embedding` $\rightarrow$ `values-online-embed.yaml` (on-demand nodes)
+     - `rag-inference-online-reranker` $\rightarrow$ `values-online-rerank.yaml` (on-demand nodes)
+     - `rag-inference-batch-ingestion` $\rightarrow$ `values-batch-ingestion.yaml` (spot nodes)
+   - Configures automated sync (`prune: true`, `selfHeal: true`), namespace creation (`CreateNamespace=true`), and health check status tracking for Triton probes (`/healthz`, `/ready`) and KEDA `ScaledObject` status.
+
+2. **Standalone Application CRDs**:
+   - `application-online-embed.yaml`, `application-online-rerank.yaml`, `application-batch-ingestion.yaml` for environment-specific deployments.
+
+3. **Canary Progressive Rollout (`deployments/argocd/rollout-canary.yaml`)**:
+   - Manages zero-downtime progressive rollouts of TensorRT FP16 engine updates (`model.plan`) with traffic shifting (20% $\rightarrow$ 50% $\rightarrow$ 100%) and automatic rollback upon error rate or latency breaches.
+
+
 
 
