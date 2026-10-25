@@ -158,6 +158,21 @@ class TestSearchClient(unittest.TestCase):
         # Initial rank 1 -> 1 / (60 + 1) = 1/61
         self.assertAlmostEqual(results[0].score, 1.0 / 61.0, places=6)
 
+    def test_rerank_non_tripping_error_falls_back_without_recording_failure(self) -> None:
+        candidates = [
+            CandidateDocument(id="doc-1", passage="Passage 1", initial_rank=1),
+        ]
+        # Simulate non-tripping error (e.g. INVALID_ARGUMENT)
+        self.mock_rerank_stub.ModelInfer.side_effect = DummyRpcError(
+            grpc.StatusCode.INVALID_ARGUMENT
+        )
+
+        results = self.client.rerank("any query", candidates)
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0].fallback_applied)
+        # Verify circuit breaker consecutive failures was NOT incremented
+        self.assertEqual(self.circuit_breaker._consecutive_failures, 0)
+
     def test_rerank_circuit_open_instant_fallback(self) -> None:
         candidates = [
             CandidateDocument(id="doc-1", passage="Passage 1", initial_rank=1),

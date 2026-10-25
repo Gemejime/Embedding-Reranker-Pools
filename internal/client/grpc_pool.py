@@ -24,7 +24,7 @@ logger = get_secured_logger("grpc-pool")
 DEFAULT_GRPC_OPTIONS: list[tuple[str, Any]] = [
     ("grpc.keepalive_time_ms", 10000),  # 10s pings
     ("grpc.keepalive_timeout_ms", 5000),  # 5s ack timeout
-    ("grpc.keepalive_permit_without_calls", 1),
+    ("grpc.keepalive_permit_without_calls", 0),
     ("grpc.http2.max_pings_without_data", 0),
     ("grpc.max_receive_message_length", 64 * 1024 * 1024),  # 64 MiB
     ("grpc.max_send_message_length", 64 * 1024 * 1024),  # 64 MiB

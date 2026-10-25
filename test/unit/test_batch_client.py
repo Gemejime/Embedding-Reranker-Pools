@@ -114,6 +114,33 @@ class TestBatchClient(unittest.TestCase):
         self.mock_batch_stub.SystemSharedMemoryUnregister.assert_called_once()
         mock_region.release.assert_called_once()
 
+    @patch("internal.client.batch_client.SharedMemoryRegion")
+    def test_pod_local_shm_empty_output_raises_runtime_error(
+        self, mock_shm_class: MagicMock
+    ) -> None:
+        mock_region = MagicMock()
+        mock_region.name = "rag_batch_in_empty"
+        mock_region.key = "/rag_batch_in_empty"
+        mock_shm_class.return_value = mock_region
+
+        self.mock_batch_stub.SystemSharedMemoryRegister.return_value = (
+            SystemSharedMemoryRegisterResponse()
+        )
+        self.mock_batch_stub.SystemSharedMemoryUnregister.return_value = (
+            SystemSharedMemoryUnregisterResponse()
+        )
+        # Empty raw_output_contents
+        self.mock_batch_stub.ModelInfer.return_value = ModelInferResponse(
+            model_name="batch_embedder_ensemble",
+            outputs=[],
+            raw_output_contents=[],
+        )
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self.client.embed_chunks(["chunk 1"], target_host="localhost", use_shm=True)
+        self.assertIn("Missing raw_output_contents", str(ctx.exception))
+        mock_region.release.assert_called_once()
+
     def test_transient_failure_retries_and_reconnects(self) -> None:
         import grpc
 

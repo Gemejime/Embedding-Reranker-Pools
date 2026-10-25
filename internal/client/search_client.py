@@ -197,7 +197,8 @@ class SearchOrchestratorClient:
 
             except Exception as exc:
                 latency_ms = (time.perf_counter() - t0_total) * 1000.0
-                self._circuit_breaker.record_failure(exc)
+                if self._circuit_breaker.is_tripping_error(exc):
+                    self._circuit_breaker.record_failure(exc)
 
                 status_desc = "queue_saturated_fallback"
                 reason_desc = f"call_failed_{type(exc).__name__}"

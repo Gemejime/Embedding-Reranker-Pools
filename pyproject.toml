@@ -18,7 +18,8 @@ dependencies = [
     "prometheus-client>=0.20.0",
     "structlog>=24.1.0",
     "numpy>=1.26.0",
-    "protobuf>=4.25.0",
+    "grpcio>=1.84.0",
+    "protobuf>=7.35.1,<8.0.0",
 ]
 
 [project.optional-dependencies]

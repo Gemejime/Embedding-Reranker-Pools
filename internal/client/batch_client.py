@@ -247,12 +247,14 @@ class BatchIngestionClient:
 
                     resp = current_stub.ModelInfer(infer_req, timeout=self._timeout_seconds)
 
-                    if resp.raw_output_contents:
-                        resp_output = resp.outputs[0] if resp.outputs else None
-                        shape = tuple(resp_output.shape) if resp_output else (len(texts), 768)
-                        return unpack_fp16_tensor(resp.raw_output_contents[0], shape=shape)
-                    else:
-                        return [[0.0] * 768 for _ in range(len(texts))]
+                    if not resp.raw_output_contents:
+                        raise RuntimeError(
+                            f"Missing raw_output_contents in response from {model_name}"
+                        )
+
+                    resp_output = resp.outputs[0] if resp.outputs else None
+                    shape = tuple(resp_output.shape) if resp_output else (len(texts), 768)
+                    return unpack_fp16_tensor(resp.raw_output_contents[0], shape=shape)
 
                 finally:
                     # Unregister input SHM from Triton

@@ -184,6 +184,10 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
         self.assertIn(("grpc.ssl_target_name_override", "triton.rag.internal"), options)
         pool.close()
 
+    def test_default_grpc_options_idle_keepalive_disabled(self) -> None:
+        opts_dict = dict(DEFAULT_GRPC_OPTIONS)
+        self.assertEqual(opts_dict.get("grpc.keepalive_permit_without_calls"), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
