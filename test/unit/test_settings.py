@@ -76,6 +76,13 @@ class TestServingSettings(unittest.TestCase):
             "RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO": "0.80",
             "RAG_SERVING_MODELS_EXPECTED": '["custom_ensemble", "custom_model"]',
             "RAG_SERVING_SHM_BASE_PATH": "/tmp/custom_shm",
+            "RAG_SERVING_GRPC_TLS_ENABLED": "true",
+            "RAG_SERVING_GRPC_CA_CERT_PATH": "/etc/ssl/certs/custom-ca.crt",
+            "RAG_SERVING_GRPC_CLIENT_CERT_PATH": "/etc/ssl/certs/custom-client.crt",
+            "RAG_SERVING_GRPC_CLIENT_KEY_PATH": "/etc/ssl/private/custom-client.key",
+            "RAG_SERVING_GRPC_SERVER_NAME_OVERRIDE": "triton.rag.internal",
+            "RAG_SERVING_API_KEY": "secret-admin-key",
+            "RAG_SERVING_LOG_LEVEL": "DEBUG",
         }
         with mock.patch.dict("os.environ", env_vars, clear=False):
             settings = ServingSettings()
@@ -91,6 +98,23 @@ class TestServingSettings(unittest.TestCase):
             self.assertEqual(settings.vram_max_utilization_ratio, 0.80)
             self.assertEqual(settings.models_expected, ["custom_ensemble", "custom_model"])
             self.assertEqual(settings.shm_base_path, "/tmp/custom_shm")
+            self.assertTrue(settings.grpc_tls_enabled)
+            self.assertEqual(settings.grpc_ca_cert_path, "/etc/ssl/certs/custom-ca.crt")
+            self.assertEqual(settings.grpc_client_cert_path, "/etc/ssl/certs/custom-client.crt")
+            self.assertEqual(settings.grpc_client_key_path, "/etc/ssl/private/custom-client.key")
+            self.assertEqual(settings.grpc_server_name_override, "triton.rag.internal")
+            self.assertEqual(settings.api_key, "secret-admin-key")
+            self.assertEqual(settings.log_level, "DEBUG")
+
+    def test_default_security_and_tls_settings(self) -> None:
+        settings = ServingSettings()
+        self.assertFalse(settings.grpc_tls_enabled)
+        self.assertIsNone(settings.grpc_ca_cert_path)
+        self.assertIsNone(settings.grpc_client_cert_path)
+        self.assertIsNone(settings.grpc_client_key_path)
+        self.assertIsNone(settings.grpc_server_name_override)
+        self.assertIsNone(settings.api_key)
+        self.assertEqual(settings.log_level, "INFO")
 
 
 if __name__ == "__main__":

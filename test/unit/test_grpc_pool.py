@@ -152,6 +152,38 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
         self.assertEqual(pool.get_active_channel_count(), 1)
         pool.close()
 
+    @patch("grpc.secure_channel")
+    @patch("grpc.ssl_channel_credentials")
+    def test_secure_channel_with_tls(
+        self, mock_creds_fn: MagicMock, mock_secure_channel_fn: MagicMock
+    ) -> None:
+        mock_creds = MagicMock()
+        mock_creds_fn.return_value = mock_creds
+        mock_channel = MagicMock()
+        mock_secure_channel_fn.return_value = mock_channel
+
+        tls_settings = ServingSettings(
+            online_embed_grpc_url="embed-tls:8001",
+            grpc_tls_enabled=True,
+            grpc_server_name_override="triton.rag.internal",
+        )
+        pool = TritonGRPCChannelPool(settings=tls_settings)
+        chan = pool.get_channel(PoolType.ONLINE_EMBEDDING)
+        self.assertEqual(chan, mock_channel)
+
+        mock_creds_fn.assert_called_once_with(
+            root_certificates=None,
+            private_key=None,
+            certificate_chain=None,
+        )
+        mock_secure_channel_fn.assert_called_once()
+        args, kwargs = mock_secure_channel_fn.call_args
+        self.assertEqual(args[0], "embed-tls:8001")
+        self.assertEqual(args[1], mock_creds)
+        options = kwargs["options"]
+        self.assertIn(("grpc.ssl_target_name_override", "triton.rag.internal"), options)
+        pool.close()
+
 
 if __name__ == "__main__":
     unittest.main()

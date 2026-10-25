@@ -108,7 +108,40 @@ class TritonGRPCChannelPool:
                         "status": "channel_created",
                     },
                 )
-                channel = grpc.insecure_channel(target, options=options)
+                if self._settings.grpc_tls_enabled:
+                    root_certs: bytes | None = None
+                    if self._settings.grpc_ca_cert_path:
+                        try:
+                            with open(self._settings.grpc_ca_cert_path, "rb") as f:
+                                root_certs = f.read()
+                        except Exception as exc:
+                            logger.error("Failed to read root CA certificate", exc_info=exc)
+                    private_key: bytes | None = None
+                    cert_chain: bytes | None = None
+                    if self._settings.grpc_client_key_path and self._settings.grpc_client_cert_path:
+                        try:
+                            with open(self._settings.grpc_client_key_path, "rb") as f:
+                                private_key = f.read()
+                            with open(self._settings.grpc_client_cert_path, "rb") as f:
+                                cert_chain = f.read()
+                        except Exception as exc:
+                            logger.error("Failed to read client mTLS cert/key", exc_info=exc)
+
+                    credentials = grpc.ssl_channel_credentials(
+                        root_certificates=root_certs,
+                        private_key=private_key,
+                        certificate_chain=cert_chain,
+                    )
+                    if self._settings.grpc_server_name_override:
+                        options.append(
+                            (
+                                "grpc.ssl_target_name_override",
+                                self._settings.grpc_server_name_override,
+                            )
+                        )
+                    channel = grpc.secure_channel(target, credentials, options=options)
+                else:
+                    channel = grpc.insecure_channel(target, options=options)
                 self._channels[pool_type] = channel
                 self._stubs[pool_type] = GRPCInferenceServiceStub(channel)
             return channel

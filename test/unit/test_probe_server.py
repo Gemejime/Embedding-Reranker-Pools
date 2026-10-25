@@ -82,6 +82,32 @@ class TestProbeServer(unittest.TestCase):
         self.assertIn("rag_serving_vram_utilization_ratio", body)
         self.assertIn("rag_serving_max_queue_delay_microseconds", body)
 
+    def test_metrics_endpoint_with_api_key_auth(self) -> None:
+        secured_settings = ServingSettings(
+            pool_type=PoolType.ONLINE_EMBEDDING,
+            api_key="operational-secret-token",
+        )
+        app = create_app(secured_settings)
+        client = TestClient(app)
+
+        # 1. Unauthenticated request rejected with 401
+        res_unauth = client.get("/metrics")
+        self.assertEqual(res_unauth.status_code, 401)
+
+        # 2. Invalid bearer token rejected with 401
+        res_invalid = client.get("/metrics", headers={"Authorization": "Bearer wrong-token"})
+        self.assertEqual(res_invalid.status_code, 401)
+
+        # 3. Valid Bearer token accepted with 200
+        res_bearer = client.get(
+            "/metrics", headers={"Authorization": "Bearer operational-secret-token"}
+        )
+        self.assertEqual(res_bearer.status_code, 200)
+
+        # 4. Valid x-api-key header accepted with 200
+        res_apikey = client.get("/metrics", headers={"x-api-key": "operational-secret-token"})
+        self.assertEqual(res_apikey.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

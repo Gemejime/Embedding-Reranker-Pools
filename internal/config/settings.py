@@ -129,6 +129,38 @@ class ServingSettings(BaseSettings):
         description="Base path for pod-scoped POSIX shared memory emptyDir volume.",
     )
 
+    # gRPC Transport Security (TLS / mTLS)
+    grpc_tls_enabled: bool = Field(
+        default=False,
+        description="Enable TLS encryption for outbound gRPC client channels.",
+    )
+    grpc_ca_cert_path: str | None = Field(
+        default=None,
+        description="Filesystem path to root CA certificate for verifying TLS server certificates.",
+    )
+    grpc_client_cert_path: str | None = Field(
+        default=None,
+        description="Filesystem path to client certificate for mutual TLS (mTLS) authentication.",
+    )
+    grpc_client_key_path: str | None = Field(
+        default=None,
+        description="Filesystem path to client private key for mutual TLS (mTLS) authentication.",
+    )
+    grpc_server_name_override: str | None = Field(
+        default=None,
+        description="Optional SNI server name override for TLS certificate validation.",
+    )
+
+    # Operational Server Security & Telemetry
+    api_key: str | None = Field(
+        default=None,
+        description="Optional bearer API key for authenticating operational scrape endpoints.",
+    )
+    log_level: str = Field(
+        default="INFO",
+        description="Structured logging verbosity level (DEBUG, INFO, WARNING, ERROR).",
+    )
+
     @model_validator(mode="before")
     @classmethod
     def apply_pool_defaults_if_not_explicit(cls, data: Any) -> Any:

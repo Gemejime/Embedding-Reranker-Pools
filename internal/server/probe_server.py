@@ -283,7 +283,17 @@ def create_app(settings: ServingSettings | None = None) -> FastAPI:
         description="Exposes Triton queue duration, latency, and GPU VRAM saturation metrics in Prometheus exposition format.",
         response_class=PlainTextResponse,
     )
-    async def metrics() -> str:
+    async def metrics(request: Request) -> str:
+        if active_settings.api_key:
+            auth_header = request.headers.get("authorization", "")
+            api_key_header = request.headers.get("x-api-key", "")
+            expected = active_settings.api_key
+            valid = auth_header == f"Bearer {expected}" or api_key_header == expected
+            if not valid:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Unauthorized: invalid or missing operational API token",
+                )
         used_bytes, capacity_bytes, ratio = await vram_monitor.get_vram_stats()
         lines = [
             "# HELP rag_serving_vram_capacity_bytes Total GPU VRAM capacity in bytes",
