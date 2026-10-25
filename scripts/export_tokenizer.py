@@ -30,6 +30,12 @@ def get_tokenizer_max_length(model_type: str) -> int:
     return MODEL_MAX_LENGTHS[m_type]
 
 
+DEFAULT_TOKENIZERS = {
+    "dense": "BAAI/bge-base-en-v1.5",
+    "reranker": "BAAI/bge-reranker-large",
+}
+
+
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments for tokenizer export."""
     parser = argparse.ArgumentParser(
@@ -44,8 +50,8 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--tokenizer-name-or-path",
         type=str,
-        default="BAAI/bge-base-en-v1.5",
-        help="HuggingFace repository ID or local tokenizer path.",
+        default=None,
+        help="HuggingFace repository ID or local tokenizer path (default depends on --model-type).",
     )
     parser.add_argument(
         "--output-dir",
@@ -64,7 +70,12 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Validate configuration and output mock artifacts without network downloads.",
     )
-    return parser.parse_args(args)
+    parsed = parser.parse_args(args)
+    if parsed.tokenizer_name_or_path is None:
+        parsed.tokenizer_name_or_path = DEFAULT_TOKENIZERS.get(
+            parsed.model_type, "BAAI/bge-base-en-v1.5"
+        )
+    return parsed
 
 
 def export_tokenizer_artifacts(

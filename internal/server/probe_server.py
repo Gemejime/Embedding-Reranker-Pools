@@ -83,8 +83,45 @@ class VRAMMonitor:
         if self._mock_vram_used_bytes is not None:
             used = self._mock_vram_used_bytes
         else:
-            # Default baseline static allocation estimate when running without active NVML
-            used = 12 * 1024 * 1024 * 1024  # 12 GiB (~50%)
+            live_used: int | None = None
+            # 1. Attempt to query NVML if available
+            try:
+                import pynvml  # type: ignore[import-not-found]
+
+                pynvml.nvmlInit()
+                handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+                info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                live_used = int(info.used)
+                capacity = int(info.total)
+            except Exception:
+                live_used = None
+
+            # 2. Attempt to query Triton Prometheus metrics endpoint for nv_gpu_memory_used_bytes
+            if live_used is None:
+                try:
+                    metrics_url = (
+                        f"{self.settings.triton_http_url.replace(':8000', ':8002')}/metrics"
+                    )
+                    async with httpx.AsyncClient(timeout=0.5) as client:
+                        resp = await client.get(metrics_url)
+                        if resp.status_code == 200:
+                            for line in resp.text.splitlines():
+                                if line.startswith("nv_gpu_memory_used_bytes"):
+                                    live_used = int(float(line.split()[-1]))
+                                    break
+                except Exception:
+                    live_used = None
+
+            # 3. If neither source is available, log warning and use baseline estimate
+            if live_used is not None:
+                used = live_used
+            else:
+                logger.warning(
+                    "GPU VRAM telemetry unavailable from NVML or Triton metrics endpoint; using baseline estimate",
+                    extra={"capacity_bytes": capacity},
+                )
+                used = 12 * 1024 * 1024 * 1024  # 12 GiB (~50%)
+
         ratio = round(used / capacity, 4) if capacity > 0 else 0.0
         return used, capacity, ratio
 
@@ -124,7 +161,7 @@ def create_app(settings: ServingSettings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["GET", "OPTIONS"],
         allow_headers=["*"],
     )
@@ -275,7 +312,8 @@ def create_app(settings: ServingSettings | None = None) -> FastAPI:
         description="Direct JSON output of the OpenAPI 3.1 specification for machine synchronization.",
     )
     async def api_docs() -> dict[str, Any]:
-        return app.openapi()
+        schema: dict[str, Any] = app.openapi()
+        return schema
 
     @app.get(
         "/metrics",

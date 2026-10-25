@@ -133,11 +133,44 @@ class SecuredJSONFormatter(logging.Formatter):
         if hasattr(record, "model_version"):
             log_payload["model_version"] = sanitize_value("model_version", record.model_version)
 
-        # Merge extra dictionary if present and sanitize
+        # Standard LogRecord attributes to ignore when harvesting extra fields
+        standard_attrs = {
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "message",
+            "asctime",
+            "taskName",
+        }
+
+        # Merge non-standard attributes from record.__dict__ (populated via logger extra={...})
+        for k, v in record.__dict__.items():
+            if k not in standard_attrs and k not in log_payload:
+                log_payload[k] = sanitize_value(k, v)
+
+        # Merge extra dictionary if explicitly present on record
         extra_data = getattr(record, "extra", None)
         if isinstance(extra_data, dict):
             for k, v in extra_data.items():
-                log_payload[k] = sanitize_value(k, v)
+                if k not in log_payload:
+                    log_payload[k] = sanitize_value(k, v)
 
         # Format and sanitize exception traceback if exc_info exists
         if record.exc_info:

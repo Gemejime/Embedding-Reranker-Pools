@@ -126,7 +126,7 @@ def compile_engine(
 
     os.makedirs(os.path.dirname(os.path.abspath(output_engine_path)), exist_ok=True)
 
-    if dry_run or not shutil.which("trtexec"):
+    if dry_run:
         # Write deterministic mock .plan engine artifact for CI validation
         with open(output_engine_path, "wb") as f:
             f.write(b"TENSORRT_FP16_ENGINE_PLAN_BINARY\x00\x00\x01\x00")
@@ -140,6 +140,11 @@ def compile_engine(
             },
         )
         return output_engine_path
+
+    if not shutil.which("trtexec"):
+        raise FileNotFoundError(
+            "trtexec executable not found in PATH. Install NVIDIA TensorRT or specify --dry-run for simulation."
+        )
 
     logger.info(
         "Invoking trtexec for TensorRT engine compilation",

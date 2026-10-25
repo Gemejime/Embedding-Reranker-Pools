@@ -42,17 +42,32 @@ case "${PROFILE}" in
     ;;
 esac
 
-TRTEXEC_CMD="trtexec --onnx=${ONNX_PATH} --saveEngine=${OUTPUT_ENGINE} --fp16 --minShapes=${MIN_SHAPES} --optShapes=${OPT_SHAPES} --maxShapes=${MAX_SHAPES} --memPoolSize=workspace:${WORKSPACE_MB} --verbose"
+TRTEXEC_CMD=(
+  trtexec
+  "--onnx=${ONNX_PATH}"
+  "--saveEngine=${OUTPUT_ENGINE}"
+  --fp16
+  "--minShapes=${MIN_SHAPES}"
+  "--optShapes=${OPT_SHAPES}"
+  "--maxShapes=${MAX_SHAPES}"
+  "--memPoolSize=workspace:${WORKSPACE_MB}"
+  --verbose
+)
 
-echo "Executing command: ${TRTEXEC_CMD}"
+echo "Executing command: ${TRTEXEC_CMD[*]}"
 
-if [ "${DRY_RUN}" = "true" ] || ! command -v trtexec &> /dev/null; then
-  echo "Dry-run mode or trtexec not found; generating mock engine artifact: ${OUTPUT_ENGINE}"
+if [ "${DRY_RUN}" = "true" ]; then
+  echo "Dry-run mode: generating mock engine artifact: ${OUTPUT_ENGINE}"
   mkdir -p "$(dirname "${OUTPUT_ENGINE}")"
   echo "TENSORRT_FP16_ENGINE_PLAN_BINARY" > "${OUTPUT_ENGINE}"
   echo "Mock TensorRT compilation complete."
   exit 0
 fi
 
-eval "${TRTEXEC_CMD}"
+if ! command -v trtexec &> /dev/null; then
+  echo "Error: trtexec not found in PATH. Install TensorRT or specify --dry-run." >&2
+  exit 1
+fi
+
+"${TRTEXEC_CMD[@]}"
 echo "TensorRT compilation succeeded: ${OUTPUT_ENGINE}"

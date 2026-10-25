@@ -65,6 +65,12 @@ def build_export_metadata(
     }
 
 
+DEFAULT_EXPORT_MODELS = {
+    "dense": "BAAI/bge-base-en-v1.5",
+    "reranker": "BAAI/bge-reranker-large",
+}
+
+
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments for ONNX export."""
     parser = argparse.ArgumentParser(
@@ -79,8 +85,8 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--model-name-or-path",
         type=str,
-        default="BAAI/bge-base-en-v1.5",
-        help="HuggingFace repository ID or local checkpoint path.",
+        default=None,
+        help="HuggingFace repository ID or local checkpoint path (default depends on --model-type).",
     )
     parser.add_argument(
         "--output-path",
@@ -99,7 +105,12 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Validate parameters and generate dummy model artifact without loading full PyTorch weights.",
     )
-    return parser.parse_args(args)
+    parsed = parser.parse_args(args)
+    if parsed.model_name_or_path is None:
+        parsed.model_name_or_path = DEFAULT_EXPORT_MODELS.get(
+            parsed.model_type, "BAAI/bge-base-en-v1.5"
+        )
+    return parsed
 
 
 def export_onnx_model(

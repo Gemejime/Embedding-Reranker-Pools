@@ -50,7 +50,7 @@ autoscaling:
         serverAddress: http://prometheus-k8s.monitoring.svc:9090
         metricName: triton_queue_duration_microseconds
         threshold: "3000"
-        query: sum(rate(triton_queue_duration_microseconds{pool="online_embedding"}[1m]))
+        query: sum(rate(triton_queue_duration_microseconds{pool="online_embedding"}[1m])) / clamp_min(sum(rate(triton_inference_count{pool="online_embedding"}[1m])), 1)
 
 env:
   RAG_SERVING_POOL_TYPE: "online_embedding"
