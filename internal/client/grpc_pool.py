@@ -8,6 +8,7 @@ Manages dedicated HTTP/2 channels for:
 Enforces production keepalive ping intervals and payload boundaries.
 """
 
+import ipaddress
 import threading
 from collections.abc import Sequence
 from typing import Any
@@ -78,9 +79,19 @@ class TritonGRPCChannelPool:
             if len(targets) == 1:
                 return targets[0]
             joined = ",".join(targets)
-            if not (joined.startswith("ipv4:") or joined.startswith("dns:")):
-                return f"ipv4:{joined}"
-            return joined
+            if joined.startswith("ipv4:") or joined.startswith("dns:"):
+                return joined
+            for entry in targets:
+                host = entry.split(":")[0] if ":" in entry else entry
+                try:
+                    ip = ipaddress.ip_address(host)
+                    if ip.version != 4:
+                        raise ValueError(f"'{entry}' is not an IPv4 address")
+                except ValueError as err:
+                    raise ValueError(
+                        f"Invalid multi-target entry '{entry}': multi-target entries without an explicit resolver prefix must be IPv4 literals. For hostnames, specify a 'dns:' prefix."
+                    ) from err
+            return f"ipv4:{joined}"
         return str(raw_target)
 
     def get_target(self, pool_type: PoolType) -> str:

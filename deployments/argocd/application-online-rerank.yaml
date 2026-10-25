@@ -1,3 +1,5 @@
+# Standalone ArgoCD Application for Online Reranker Pool.
+# Alternative manifest for environments where ApplicationSet controller is not used.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -20,7 +22,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/enterprise-rag/rag-inference-serving.git
-    targetRevision: HEAD
+    targetRevision: rag-inference-serving
     path: deployments/helm
     helm:
       valueFiles:

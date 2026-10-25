@@ -23,7 +23,6 @@ from api.proto.v1.triton_stubs_pb2 import (
     SystemSharedMemoryRegisterRequest,
     SystemSharedMemoryUnregisterRequest,
 )
-from api.proto.v1.triton_stubs_pb2_grpc import GRPCInferenceServiceStub
 from internal.client.grpc_pool import TritonGRPCChannelPool
 from internal.client.kserve_codec import (
     build_single_text_infer_request,
@@ -89,7 +88,6 @@ class BatchIngestionClient:
 
         req_id = request_id or f"batch-{uuid.uuid4().hex[:8]}"
         total_chunks = len(chunks)
-        stub = self._pool.get_stub(PoolType.BATCH_INGESTION)
         all_embeddings: list[list[float]] = []
         t0_total = time.perf_counter()
 
@@ -104,14 +102,12 @@ class BatchIngestionClient:
 
             if use_shm and target_host.strip().lower() in LOCAL_HOSTS:
                 batch_vectors = self._embed_micro_batch_shm(
-                    stub=stub,
                     texts=micro_batch,
                     model_name=model_name,
                     request_id=f"{req_id}-{i}",
                 )
             else:
                 batch_vectors = self._embed_micro_batch_grpc(
-                    stub=stub,
                     texts=micro_batch,
                     model_name=model_name,
                     request_id=f"{req_id}-{i}",
@@ -135,7 +131,6 @@ class BatchIngestionClient:
 
     def _embed_micro_batch_grpc(
         self,
-        stub: GRPCInferenceServiceStub,
         texts: list[str],
         model_name: str,
         request_id: str,
@@ -152,9 +147,7 @@ class BatchIngestionClient:
         last_exc: Exception | None = None
         for attempt in range(self._max_retries + 1):
             try:
-                current_stub = (
-                    stub if attempt == 0 else self._pool.get_stub(PoolType.BATCH_INGESTION)
-                )
+                current_stub = self._pool.get_stub(PoolType.BATCH_INGESTION)
                 resp = current_stub.ModelInfer(req, timeout=self._timeout_seconds)
                 if not resp.raw_output_contents:
                     raise RuntimeError(f"Missing raw_output_contents in response from {model_name}")
@@ -193,7 +186,6 @@ class BatchIngestionClient:
 
     def _embed_micro_batch_shm(
         self,
-        stub: GRPCInferenceServiceStub,
         texts: list[str],
         model_name: str,
         request_id: str,
@@ -204,7 +196,7 @@ class BatchIngestionClient:
             packed_bytes = pack_string_tensor(texts)
             shm_name = f"rag_batch_in_{uuid.uuid4().hex[:12]}"
             region = SharedMemoryRegion(name=shm_name, size_bytes=len(packed_bytes))
-            current_stub = stub if attempt == 0 else self._pool.get_stub(PoolType.BATCH_INGESTION)
+            current_stub = self._pool.get_stub(PoolType.BATCH_INGESTION)
 
             try:
                 region.allocate()

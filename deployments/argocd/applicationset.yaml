@@ -1,3 +1,9 @@
+# Declarative ArgoCD ApplicationSet managing all 3 compute pools.
+# NOTE: This ApplicationSet is the primary multi-pool delivery mechanism.
+# The standalone application manifests (application-online-embed.yaml,
+# application-online-rerank.yaml, application-batch-ingestion.yaml) are
+# alternative manifests for clusters without the ApplicationSet controller enabled.
+# Do not apply both simultaneously to avoid competing sources of truth.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -39,7 +45,7 @@ spec:
       project: default
       source:
         repoURL: https://github.com/enterprise-rag/rag-inference-serving.git
-        targetRevision: HEAD
+        targetRevision: rag-inference-serving
         path: deployments/helm
         helm:
           valueFiles:
@@ -55,9 +61,3 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ApplyOutOfSyncOnly=true
-          - RespectIgnoreDifferences=true
-      ignoreDifferences:
-        - group: keda.sh
-          kind: ScaledObject
-          jsonPointers:
-            - /spec/triggers

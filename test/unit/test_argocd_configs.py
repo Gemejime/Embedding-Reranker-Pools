@@ -88,6 +88,18 @@ class TestArgoCDConfigs(unittest.TestCase):
         weights = [s["setWeight"] for s in steps if "setWeight" in s]
         self.assertEqual(weights, [20, 50, 100])
 
+    def test_analysistemplate_manifest(self) -> None:
+        path = os.path.join(self.argocd_dir, "analysistemplate.yaml")
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+
+        self.assertEqual(data["kind"], "AnalysisTemplate")
+        self.assertEqual(data["metadata"]["name"], "triton-vram-and-latency-check")
+        arg_names = [a["name"] for a in data["spec"]["args"]]
+        self.assertIn("service-name", arg_names)
+        metric_names = [m["name"] for m in data["spec"]["metrics"]]
+        self.assertIn("success-rate", metric_names)
+
 
 if __name__ == "__main__":
     unittest.main()

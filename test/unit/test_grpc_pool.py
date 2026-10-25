@@ -134,6 +134,11 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
         self.assertIn(("grpc.lb_policy_name", "round_robin"), options)
         pool.close()
 
+    def test_unprefixed_hostname_multi_target_raises_value_error(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            TritonGRPCChannelPool(batch_target=["worker-1.local:8001", "worker-2.local:8001"])
+        self.assertIn("must be IPv4 literals", str(ctx.exception))
+
     @patch("grpc.insecure_channel")
     def test_reconnect_channel_recycling(self, mock_channel_fn: MagicMock) -> None:
         mock_chan_old = MagicMock()

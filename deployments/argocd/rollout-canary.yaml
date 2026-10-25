@@ -25,30 +25,99 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: rag-inference-serving
+      rag.enterprise.internal/pool: online_embedding
   template:
     metadata:
       labels:
         app.kubernetes.io/name: rag-inference-serving
+        app.kubernetes.io/instance: rag-inference-online-embedding
+        rag.enterprise.internal/pool: online_embedding
+        compute-pool: online-embedding
+        lifecycle: on-demand
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      nodeSelector:
+        node.kubernetes.io/instance-type: "g6.2xlarge"
+        k8s.amazonaws.com/lifecycle: "on-demand"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: compute-pool
+                    operator: In
+                    values:
+                      - online-embedding
       containers:
-        - name: triton-serving
-          image: enterprise-rag/triton-inference-serving:latest
+        - name: inference-worker
+          image: enterprise-rag/triton-inference-serving:v1.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: RAG_SERVING_POOL_TYPE
+              value: "online_embedding"
+            - name: RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS
+              value: "2000"
+            - name: RAG_SERVING_MAX_BATCH_SIZE
+              value: "32"
+            - name: MODEL_REPOSITORY
+              value: "/models/online_embedding_repository"
+          ports:
+            - name: triton-grpc
+              containerPort: 8001
+              protocol: TCP
+            - name: triton-http
+              containerPort: 8000
+              protocol: TCP
+            - name: operational
+              containerPort: 8080
+              protocol: TCP
           resources:
             limits:
               nvidia.com/gpu: 1
+              cpu: "8"
               memory: 32Gi
             requests:
               nvidia.com/gpu: 1
+              cpu: "4"
               memory: 16Gi
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: 8080
-            initialDelaySeconds: 15
-            periodSeconds: 5
+          volumeMounts:
+            - name: shm-volume
+              mountPath: /dev/shm
+            - name: model-engines
+              mountPath: /models
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8080
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 20
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+      volumes:
+        - name: shm-volume
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model-engines
+          persistentVolumeClaim:
+            claimName: model-cache-pvc
+            readOnly: true

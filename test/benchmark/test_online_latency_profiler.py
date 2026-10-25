@@ -16,7 +16,6 @@ Supports dual execution modes:
 """
 
 import os
-import sys
 import time
 import unittest
 from concurrent import futures
@@ -41,7 +40,7 @@ from internal.client.kserve_codec import pack_fp16_tensor, unpack_string_tensor
 from internal.client.models import CandidateDocument
 from internal.client.search_client import SearchOrchestratorClient
 
-IS_LIVE_TRITON = "--live-triton" in sys.argv or os.getenv("LIVE_TRITON", "0") == "1"
+IS_LIVE_TRITON = os.getenv("LIVE_TRITON", "0") == "1"
 
 # Hardware-calibrated latencies on dedicated NVIDIA L4 / A10G on-demand instances
 CALIBRATED_EMBED_BASE_MS = 2.4
@@ -194,12 +193,19 @@ class TestOnlineLatencyProfiler(unittest.TestCase):
         p90 = latencies_ms[int(iterations * 0.90)]
         p99 = latencies_ms[min(int(iterations * 0.99), iterations - 1)]
 
-        # SLO Verification: P99 <= 10 ms for online embedding
-        self.assertLessEqual(
-            p99,
-            10.0,
-            f"Online embedding P99 latency must be <= 10.0 ms, got {p99:.2f} ms (P50={p50:.2f}ms, P90={p90:.2f}ms)",
-        )
+        if IS_LIVE_TRITON:
+            # Live SLO Validation: P99 <= 10 ms for online embedding on physical GPU
+            self.assertLessEqual(
+                p99,
+                10.0,
+                f"Live Online embedding P99 latency must be <= 10.0 ms, got {p99:.2f} ms (P50={p50:.2f}ms, P90={p90:.2f}ms)",
+            )
+        else:
+            # Deterministic timing harness check
+            self.assertGreater(p99, 0.0)
+            self.assertLessEqual(
+                p99, 10.0, f"Harness check: calibrated P99 {p99:.2f}ms exceeds 10ms"
+            )
 
     def test_online_reranker_pool_p99_latency(self) -> None:
         """Verify Online Reranker Pool latency P99 <= 30 ms across search depths (10-30 candidates pruned to Top-15)."""
@@ -234,12 +240,19 @@ class TestOnlineLatencyProfiler(unittest.TestCase):
         p90 = latencies_ms[int(iterations * 0.90)]
         p99 = latencies_ms[min(int(iterations * 0.99), iterations - 1)]
 
-        # SLO Verification: P99 <= 30 ms for online reranking
-        self.assertLessEqual(
-            p99,
-            30.0,
-            f"Online reranker P99 latency must be <= 30.0 ms, got {p99:.2f} ms (P50={p50:.2f}ms, P90={p90:.2f}ms)",
-        )
+        if IS_LIVE_TRITON:
+            # Live SLO Validation: P99 <= 30 ms for online reranking on physical GPU
+            self.assertLessEqual(
+                p99,
+                30.0,
+                f"Live Online reranker P99 latency must be <= 30.0 ms, got {p99:.2f} ms (P50={p50:.2f}ms, P90={p90:.2f}ms)",
+            )
+        else:
+            # Deterministic timing harness check
+            self.assertGreater(p99, 0.0)
+            self.assertLessEqual(
+                p99, 30.0, f"Harness check: calibrated P99 {p99:.2f}ms exceeds 30ms"
+            )
 
     def test_end_to_end_serving_cumulative_budget(self) -> None:
         """Assert dense embedding + candidate reranking remains within <= 40 ms P99 cumulative search budget."""
@@ -275,12 +288,19 @@ class TestOnlineLatencyProfiler(unittest.TestCase):
         cumulative_latencies_ms.sort()
         p99 = cumulative_latencies_ms[min(int(iterations * 0.99), iterations - 1)]
 
-        # Cumulative budget verification: P99 <= 40 ms
-        self.assertLessEqual(
-            p99,
-            40.0,
-            f"End-to-end retrieval budget P99 must be <= 40.0 ms, got {p99:.2f} ms",
-        )
+        if IS_LIVE_TRITON:
+            # Live SLO Validation: Cumulative budget P99 <= 40 ms
+            self.assertLessEqual(
+                p99,
+                40.0,
+                f"Live End-to-end retrieval budget P99 must be <= 40.0 ms, got {p99:.2f} ms",
+            )
+        else:
+            # Deterministic timing harness check
+            self.assertGreater(p99, 0.0)
+            self.assertLessEqual(
+                p99, 40.0, f"Harness check: calibrated P99 {p99:.2f}ms exceeds 40ms"
+            )
 
 
 if __name__ == "__main__":

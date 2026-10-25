@@ -13,7 +13,6 @@ Supports dual execution modes:
 """
 
 import os
-import sys
 import time
 import unittest
 from concurrent import futures
@@ -41,7 +40,7 @@ from internal.client.batch_client import BatchIngestionClient
 from internal.client.grpc_pool import TritonGRPCChannelPool
 from internal.client.kserve_codec import pack_fp16_tensor, unpack_string_tensor
 
-IS_LIVE_TRITON = "--live-triton" in sys.argv or os.getenv("LIVE_TRITON", "0") == "1"
+IS_LIVE_TRITON = os.getenv("LIVE_TRITON", "0") == "1"
 
 # Hardware-calibrated TensorRT FP16 execution parameters for NVIDIA L4 / A10G (24 GB)
 BASE_KERNEL_LAUNCH_MS = 1.2
@@ -191,16 +190,30 @@ class TestSingleNodeEmbeddingSweep(unittest.TestCase):
         max_batch_result = results[256]
         throughput_256 = max_batch_result["throughput_chunks_sec"]
 
-        self.assertGreaterEqual(
-            throughput_256,
-            2500.0,
-            f"Throughput at batch 256 must meet >= 2,500 chunks/sec target, got {throughput_256:.1f}",
-        )
-        self.assertLessEqual(
-            throughput_256,
-            3500.0,
-            f"Throughput at batch 256 must stay within <= 3,500 chunks/sec ceiling, got {throughput_256:.1f}",
-        )
+        if IS_LIVE_TRITON:
+            # Live GPU SLO Verification
+            self.assertGreaterEqual(
+                throughput_256,
+                2500.0,
+                f"Live Throughput at batch 256 must meet >= 2,500 chunks/sec target, got {throughput_256:.1f}",
+            )
+            self.assertLessEqual(
+                throughput_256,
+                3500.0,
+                f"Live Throughput at batch 256 must stay within <= 3,500 chunks/sec ceiling, got {throughput_256:.1f}",
+            )
+        else:
+            # Timing harness simulation check: verify throughput model satisfies calibrated bounds
+            self.assertGreaterEqual(
+                throughput_256,
+                2500.0,
+                f"Harness check: simulated throughput at batch 256 must meet >= 2,500 chunks/sec, got {throughput_256:.1f}",
+            )
+            self.assertLessEqual(
+                throughput_256,
+                3500.0,
+                f"Harness check: simulated throughput at batch 256 must be <= 3,500 chunks/sec, got {throughput_256:.1f}",
+            )
 
         # Dynamic batch packing efficiency: throughput at 256 should be > 5x throughput at batch 1
         self.assertGreater(
@@ -248,11 +261,19 @@ class TestSingleNodeEmbeddingSweep(unittest.TestCase):
             activation_vram_bytes = 1.2 * (1024**3)
             active_memory_bytes = static_model_vram_bytes + activation_vram_bytes
 
-            self.assertLess(
-                active_memory_bytes,
-                ceiling_85_pct_bytes,
-                f"Active VRAM {active_memory_bytes / 1024**3:.2f} GiB must stay below 85% ceiling (20.4 GiB)",
-            )
+            if IS_LIVE_TRITON:
+                self.assertLess(
+                    active_memory_bytes,
+                    ceiling_85_pct_bytes,
+                    f"Live active VRAM {active_memory_bytes / 1024**3:.2f} GiB must stay below 85% ceiling (20.4 GiB)",
+                )
+            else:
+                # Harness check: verify static + dynamic activation sizing respects the 85% headroom bound
+                self.assertLess(
+                    active_memory_bytes,
+                    ceiling_85_pct_bytes,
+                    f"Harness check: projected VRAM {active_memory_bytes / 1024**3:.2f} GiB exceeds 85% ceiling (20.4 GiB)",
+                )
             vram_utilization_ratio = active_memory_bytes / total_vram_bytes
             self.assertLess(vram_utilization_ratio, 0.85)
 

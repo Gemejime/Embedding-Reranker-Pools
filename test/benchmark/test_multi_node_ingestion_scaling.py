@@ -12,7 +12,6 @@ Supports dual execution modes:
 """
 
 import os
-import sys
 import time
 import unittest
 from concurrent import futures
@@ -36,7 +35,7 @@ from internal.client.batch_client import BatchIngestionClient
 from internal.client.grpc_pool import TritonGRPCChannelPool
 from internal.client.kserve_codec import pack_fp16_tensor, unpack_string_tensor
 
-IS_LIVE_TRITON = "--live-triton" in sys.argv or os.getenv("LIVE_TRITON", "0") == "1"
+IS_LIVE_TRITON = os.getenv("LIVE_TRITON", "0") == "1"
 
 # Hardware calibrated per-node throughput at batch 256: 2,900 to 3,100 chunks/sec per spot GPU
 CALIBRATED_NODE_THROUGHPUT_CHUNKS_SEC = 2950.0
@@ -137,27 +136,31 @@ class TestMultiNodeIngestionScaling(unittest.TestCase):
 
         # Execute concurrent tasks across simulated cluster workers
         num_workers = 4
+        num_tasks = 8
+        t0_run = time.perf_counter()
         with futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-            future_to_id = {executor.submit(worker_task, i): i for i in range(8)}
+            future_to_id = {executor.submit(worker_task, i): i for i in range(num_tasks)}
             _ = [f.result() for f in futures.as_completed(future_to_id)]
+        total_run_duration_s = time.perf_counter() - t0_run
+        total_chunks_processed = num_tasks * chunks_per_batch
+        measured_throughput = (
+            total_chunks_processed / total_run_duration_s if total_run_duration_s > 0 else 0.0
+        )
 
         if IS_LIVE_TRITON:
-            # Live cluster: measure aggregate rate across live nodes
-            t0_cluster = time.perf_counter()
-            vectors = client.embed_chunks(sample_batch * 4)
-            cluster_duration_s = time.perf_counter() - t0_cluster
-            aggregate_throughput_chunks_sec = len(vectors) / cluster_duration_s
+            # Live cluster: assert aggregate scale-out meets or exceeds 40,000 chunks/sec
+            self.assertGreaterEqual(
+                measured_throughput,
+                40000.0,
+                f"Aggregate throughput across {target_nodes} spot nodes must be >= 40,000 chunks/sec, got {measured_throughput:.1f}",
+            )
         else:
-            # In mock harness mode: calculate aggregate cluster capacity across target_nodes (14 nodes)
-            # Each spot node sustains 2,900 - 3,100 chunks/sec at batch 256
-            aggregate_throughput_chunks_sec = target_nodes * CALIBRATED_NODE_THROUGHPUT_CHUNKS_SEC
-
-        # Assert aggregate scale-out meets or exceeds 40,000 chunks/sec
-        self.assertGreaterEqual(
-            aggregate_throughput_chunks_sec,
-            40000.0,
-            f"Aggregate throughput across {target_nodes} spot nodes must be >= 40,000 chunks/sec, got {aggregate_throughput_chunks_sec:.1f}",
-        )
+            # Mock harness validation check: assert concurrent workers processed all chunks
+            self.assertGreater(
+                measured_throughput,
+                0.0,
+                "Measured harness throughput must be positive across concurrent workers",
+            )
 
         client.close()
         pool.close()

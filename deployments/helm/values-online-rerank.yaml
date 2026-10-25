@@ -37,9 +37,9 @@ autoscaling:
     - type: prometheus
       metadata:
         serverAddress: http://prometheus-k8s.monitoring.svc:9090
-        metricName: triton_queue_duration_microseconds
+        metricName: nv_inference_queue_duration_us
         threshold: "5000"  # Scale trigger: average queue delay >= 5 ms (5000 us)
-        query: sum(rate(triton_queue_duration_microseconds{pool="online_reranker"}[1m])) / clamp_min(sum(rate(triton_inference_count{pool="online_reranker"}[1m])), 1)
+        query: sum(rate(nv_inference_queue_duration_us{pool="online_reranker"}[1m])) / clamp_min(sum(rate(nv_inference_count{pool="online_reranker"}[1m])), 0.001)
 
 alerts:
   warningQueueDelayMicroseconds: "8000"  # Warning alert at 8 ms for > 1 min

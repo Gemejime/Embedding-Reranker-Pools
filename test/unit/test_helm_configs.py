@@ -38,7 +38,8 @@ class TestHelmConfigs(unittest.TestCase):
         trigger = data["autoscaling"]["triggers"][0]
         self.assertEqual(trigger["metadata"]["threshold"], "3000")
         self.assertIn("clamp_min", trigger["metadata"]["query"])
-        self.assertIn("triton_queue_duration_microseconds", trigger["metadata"]["query"])
+        self.assertIn("nv_inference_queue_duration_us", trigger["metadata"]["query"])
+        self.assertEqual(trigger["metadata"]["metricName"], "nv_inference_queue_duration_us")
         self.assertEqual(data["alerts"]["warningQueueDelayMicroseconds"], "4000")
 
     def test_online_rerank_overlay(self) -> None:
@@ -52,6 +53,8 @@ class TestHelmConfigs(unittest.TestCase):
         trigger = data["autoscaling"]["triggers"][0]
         self.assertEqual(trigger["metadata"]["threshold"], "5000")
         self.assertIn("clamp_min", trigger["metadata"]["query"])
+        self.assertIn("nv_inference_queue_duration_us", trigger["metadata"]["query"])
+        self.assertEqual(trigger["metadata"]["metricName"], "nv_inference_queue_duration_us")
         self.assertEqual(data["alerts"]["warningQueueDelayMicroseconds"], "8000")
 
     def test_batch_ingestion_overlay(self) -> None:

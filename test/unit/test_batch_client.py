@@ -13,6 +13,7 @@ from api.proto.v1.triton_stubs_pb2 import (
 )
 from internal.client.batch_client import BatchIngestionClient
 from internal.client.kserve_codec import pack_fp16_tensor
+from internal.config.settings import PoolType
 from internal.logging.secured_logger import SecuredJSONFormatter
 from internal.shm.posix_shm import PodBoundaryViolationError
 
@@ -144,28 +145,52 @@ class TestBatchClient(unittest.TestCase):
     def test_transient_failure_retries_and_reconnects(self) -> None:
         import grpc
 
-        # First call raises UNAVAILABLE (simulating spot node termination), second succeeds
+        stub_old = MagicMock()
+        stub_new = MagicMock()
+
         err = grpc.RpcError()
         err.code = lambda: grpc.StatusCode.UNAVAILABLE
 
-        out_bytes = pack_fp16_tensor([[0.7] * 768])
-        success_resp = ModelInferResponse(
+        resp_batch_1 = ModelInferResponse(
+            model_name="batch_embedder_ensemble",
+            outputs=[InferOutputTensor(name="embeddings", shape=[2, 768], datatype="FP16")],
+            raw_output_contents=[pack_fp16_tensor([[0.7] * 768, [0.8] * 768])],
+        )
+        resp_batch_2 = ModelInferResponse(
             model_name="batch_embedder_ensemble",
             outputs=[InferOutputTensor(name="embeddings", shape=[1, 768], datatype="FP16")],
-            raw_output_contents=[out_bytes],
+            raw_output_contents=[pack_fp16_tensor([[0.9] * 768])],
         )
 
-        self.mock_batch_stub.ModelInfer.side_effect = [err, success_resp]
+        stub_old.ModelInfer.side_effect = err
+        stub_new.ModelInfer.side_effect = [resp_batch_1, resp_batch_2]
+
+        # Initial stub is stub_old; after reconnect_channel, pool returns stub_new
+        current_stub = stub_old
+
+        def fake_get_stub(pool_type: PoolType) -> MagicMock:
+            nonlocal current_stub
+            return current_stub
+
+        def fake_reconnect(pool_type: PoolType) -> None:
+            nonlocal current_stub
+            current_stub = stub_new
+
+        self.mock_pool.get_stub.side_effect = fake_get_stub
+        self.mock_pool.reconnect_channel.side_effect = fake_reconnect
 
         client = BatchIngestionClient(
             pool=self.mock_pool,
-            max_batch_size=256,
+            max_batch_size=2,
             max_retries=2,
             backoff_seconds=0.001,
         )
-        vectors = client.embed_chunks(["transient chunk"])
-        self.assertEqual(len(vectors), 1)
-        self.assertEqual(self.mock_batch_stub.ModelInfer.call_count, 2)
+
+        # 3 chunks -> 2 micro-batches (batch 1: 2 chunks, batch 2: 1 chunk)
+        vectors = client.embed_chunks(["chunk 1", "chunk 2", "chunk 3"])
+        self.assertEqual(len(vectors), 3)
+        self.assertEqual(stub_old.ModelInfer.call_count, 1)
+        self.assertEqual(stub_new.ModelInfer.call_count, 2)
         self.mock_pool.reconnect_channel.assert_called_once()
 
 
