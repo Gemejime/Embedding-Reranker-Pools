@@ -40,6 +40,7 @@ exclude = ["test*", "deployments*", "tasks*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["*_pb2.py", "*_pb2_grpc.py", "*_pb2.pyi"]
 
 [tool.ruff.lint]
 select = [
@@ -69,6 +70,16 @@ check_untyped_defs = true
 no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "grpc",
+    "grpc.*",
+    "api.proto.v1.triton_stubs_pb2",
+    "api.proto.v1.triton_stubs_pb2_grpc",
+]
+ignore_errors = true
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"

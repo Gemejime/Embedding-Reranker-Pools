@@ -80,6 +80,18 @@ class ServingSettings(BaseSettings):
         default="localhost:8001",
         description="Internal gRPC endpoint for Triton KServe v2 inference.",
     )
+    online_embed_grpc_url: str = Field(
+        default="localhost:8001",
+        description="Endpoint for online embedding pool Triton gRPC service.",
+    )
+    online_rerank_grpc_url: str = Field(
+        default="localhost:8001",
+        description="Endpoint for online reranker pool Triton gRPC service.",
+    )
+    batch_ingest_grpc_url: str = Field(
+        default="localhost:8001",
+        description="Endpoint for batch ingestion pool Triton gRPC service.",
+    )
 
     max_queue_delay_microseconds: int = Field(
         default=2000,
