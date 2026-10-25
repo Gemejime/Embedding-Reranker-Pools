@@ -1,5 +1,6 @@
 """Unit tests for configuration settings and pool-specific calibrated invariants."""
 
+import os
 import unittest
 from unittest import mock
 
@@ -15,6 +16,7 @@ from internal.config.settings import (
 
 
 class TestServingSettings(unittest.TestCase):
+    @mock.patch.dict(os.environ, {}, clear=True)
     def test_online_embedding_defaults(self) -> None:
         settings = ServingSettings(_env_file=None, pool_type=PoolType.ONLINE_EMBEDDING)
         self.assertEqual(settings.pool_type, PoolType.ONLINE_EMBEDDING)
@@ -26,6 +28,7 @@ class TestServingSettings(unittest.TestCase):
         self.assertIn("online_embedder_ensemble", settings.models_expected)
         self.assertIn("dense_embedder_trt", settings.models_expected)
 
+    @mock.patch.dict(os.environ, {}, clear=True)
     def test_online_reranker_defaults(self) -> None:
         settings = ServingSettings(_env_file=None, pool_type=PoolType.ONLINE_RERANKER)
         self.assertEqual(settings.pool_type, PoolType.ONLINE_RERANKER)
@@ -34,6 +37,7 @@ class TestServingSettings(unittest.TestCase):
         self.assertIn("online_reranker_ensemble", settings.models_expected)
         self.assertIn("cross_encoder_trt", settings.models_expected)
 
+    @mock.patch.dict(os.environ, {}, clear=True)
     def test_batch_ingestion_defaults(self) -> None:
         settings = ServingSettings(_env_file=None, pool_type=PoolType.BATCH_INGESTION)
         self.assertEqual(settings.pool_type, PoolType.BATCH_INGESTION)
@@ -41,6 +45,7 @@ class TestServingSettings(unittest.TestCase):
         self.assertEqual(settings.max_batch_size, 256)
         self.assertIn("batch_embedder_ensemble", settings.models_expected)
 
+    @mock.patch.dict(os.environ, {}, clear=True)
     def test_vram_and_headroom_constants(self) -> None:
         settings = ServingSettings(_env_file=None)
         # 24 GiB total capacity

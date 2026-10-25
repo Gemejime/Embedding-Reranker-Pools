@@ -3,6 +3,7 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts.build_trt_engine import (
     SHAPE_PROFILES,
@@ -98,6 +99,45 @@ class TestExportScripts(unittest.TestCase):
             res = compile_engine("online_embed", "model.onnx", out_plan, dry_run=True)
             self.assertEqual(res, out_plan)
             self.assertTrue(os.path.isfile(out_plan))
+
+    def test_compile_engine_missing_trtexec_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_plan = os.path.join(tmp_dir, "model.plan")
+            with (
+                mock.patch("shutil.which", return_value=None),
+                self.assertRaises(FileNotFoundError),
+            ):
+                compile_engine("online_embed", "model.onnx", out_plan, dry_run=False)
+
+    def test_export_onnx_arg_defaults(self) -> None:
+        from scripts.export_onnx import parse_args as parse_onnx_args
+
+        dense_args = parse_onnx_args(["--model-type", "dense", "--output-path", "out.onnx"])
+        self.assertEqual(dense_args.model_name_or_path, "BAAI/bge-base-en-v1.5")
+
+        rerank_args = parse_onnx_args(["--model-type", "reranker", "--output-path", "out.onnx"])
+        self.assertEqual(rerank_args.model_name_or_path, "BAAI/bge-reranker-large")
+
+        custom_args = parse_onnx_args(
+            [
+                "--model-type",
+                "reranker",
+                "--model-name-or-path",
+                "custom/model",
+                "--output-path",
+                "out.onnx",
+            ]
+        )
+        self.assertEqual(custom_args.model_name_or_path, "custom/model")
+
+    def test_export_tokenizer_arg_defaults(self) -> None:
+        from scripts.export_tokenizer import parse_args as parse_tok_args
+
+        dense_args = parse_tok_args(["--model-type", "dense", "--output-dir", "tok_out"])
+        self.assertEqual(dense_args.tokenizer_name_or_path, "BAAI/bge-base-en-v1.5")
+
+        rerank_args = parse_tok_args(["--model-type", "reranker", "--output-dir", "tok_out"])
+        self.assertEqual(rerank_args.tokenizer_name_or_path, "BAAI/bge-reranker-large")
 
 
 if __name__ == "__main__":
