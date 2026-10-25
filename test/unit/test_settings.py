@@ -138,6 +138,79 @@ class TestServingSettings(unittest.TestCase):
         self.assertEqual(override_settings.online_rerank_grpc_url, "dedicated-rerank.internal:8001")
         self.assertEqual(override_settings.batch_ingest_grpc_url, "custom-triton.internal:8001")
 
+    def test_custom_env_file_loading_all_variables(self) -> None:
+        """Verify that changing any configuration key in a .env file directly reflects across the project."""
+        import tempfile
+
+        from internal.client.grpc_pool import TritonGRPCChannelPool
+
+        custom_env_content = """
+RAG_SERVING_POOL_TYPE=batch_ingestion
+RAG_SERVING_SERVER_HOST=127.0.0.1
+RAG_SERVING_SERVER_PORT=8099
+RAG_SERVING_TRITON_HTTP_URL=http://triton-custom:8000
+RAG_SERVING_TRITON_GRPC_URL=triton-custom:8001
+RAG_SERVING_ONLINE_EMBED_GRPC_URL=custom-embed:8001
+RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS=12000
+RAG_SERVING_MAX_BATCH_SIZE=128
+RAG_SERVING_VRAM_CAPACITY_BYTES=34359738368
+RAG_SERVING_MAX_STATIC_VRAM_BYTES=25769803776
+RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO=0.75
+RAG_SERVING_MODELS_EXPECTED=["custom_engine_v1","custom_tokenizer"]
+RAG_SERVING_SHM_BASE_PATH=/dev/shm/custom_tenant
+RAG_SERVING_GRPC_TLS_ENABLED=true
+RAG_SERVING_GRPC_CA_CERT_PATH=/etc/ssl/certs/custom_ca.pem
+RAG_SERVING_GRPC_CLIENT_CERT_PATH=/etc/ssl/certs/client.pem
+RAG_SERVING_GRPC_CLIENT_KEY_PATH=/etc/ssl/private/client.key
+RAG_SERVING_GRPC_SERVER_NAME_OVERRIDE=triton.secure.internal
+RAG_SERVING_API_KEY=tenant-super-secret-key
+RAG_SERVING_LOG_LEVEL=DEBUG
+"""
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".env") as tf:
+            tf.write(custom_env_content)
+            tf_path = tf.name
+
+        try:
+            settings = ServingSettings(_env_file=tf_path)
+            # Verify identity & network
+            self.assertEqual(settings.pool_type, PoolType.BATCH_INGESTION)
+            self.assertEqual(settings.server_host, "127.0.0.1")
+            self.assertEqual(settings.server_port, 8099)
+            self.assertEqual(settings.triton_http_url, "http://triton-custom:8000")
+            self.assertEqual(settings.triton_grpc_url, "triton-custom:8001")
+            # Verify pool target override vs cascade inheritance
+            self.assertEqual(settings.online_embed_grpc_url, "custom-embed:8001")
+            self.assertEqual(settings.online_rerank_grpc_url, "triton-custom:8001")
+            self.assertEqual(settings.batch_ingest_grpc_url, "triton-custom:8001")
+            # Verify batching & memory invariants
+            self.assertEqual(settings.max_queue_delay_microseconds, 12000)
+            self.assertEqual(settings.max_batch_size, 128)
+            self.assertEqual(settings.vram_capacity_bytes, 34359738368)
+            self.assertEqual(settings.max_static_vram_bytes, 25769803776)
+            self.assertEqual(settings.vram_max_utilization_ratio, 0.75)
+            self.assertEqual(settings.models_expected, ["custom_engine_v1", "custom_tokenizer"])
+            self.assertEqual(settings.shm_base_path, "/dev/shm/custom_tenant")
+            # Verify security & TLS
+            self.assertTrue(settings.grpc_tls_enabled)
+            self.assertEqual(settings.grpc_ca_cert_path, "/etc/ssl/certs/custom_ca.pem")
+            self.assertEqual(settings.grpc_client_cert_path, "/etc/ssl/certs/client.pem")
+            self.assertEqual(settings.grpc_client_key_path, "/etc/ssl/private/client.key")
+            self.assertEqual(settings.grpc_server_name_override, "triton.secure.internal")
+            self.assertEqual(settings.api_key, "tenant-super-secret-key")
+            self.assertEqual(settings.log_level, "DEBUG")
+
+            # Verify TritonGRPCChannelPool consumes these settings directly
+            pool = TritonGRPCChannelPool(settings=settings)
+            self.assertEqual(pool.get_target(PoolType.ONLINE_EMBEDDING), "custom-embed:8001")
+            self.assertEqual(pool.get_target(PoolType.ONLINE_RERANKER), "triton-custom:8001")
+            self.assertEqual(pool.get_target(PoolType.BATCH_INGESTION), "triton-custom:8001")
+            pool.close()
+        finally:
+            import os
+
+            if os.path.exists(tf_path):
+                os.remove(tf_path)
+
 
 if __name__ == "__main__":
     unittest.main()
