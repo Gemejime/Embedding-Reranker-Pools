@@ -101,7 +101,8 @@ Every worker pod (`online-embedding`, `online-reranker`, and `batch-ingestion`) 
       "get": {
         "summary": "Prometheus Metrics Scrape",
         "responses": {
-          "200": { "description": "Prometheus text exposition format" }
+          "200": { "description": "Prometheus text exposition format" },
+          "401": { "description": "Unauthorized - invalid or missing operational API token" }
         }
       }
     }
@@ -751,6 +752,29 @@ The microservice reads configuration parameters via Pydantic `ServingSettings` w
 | `RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO` | `float` | `0.85` | Active runtime VRAM threshold triggering HTTP 503 traffic shedding ($>85\%$ or $>20.4\text{ GiB}$). |
 | `RAG_SERVING_MODELS_EXPECTED` | `JSON array` | Pool-calibrated | List of initialized model engine names required for `/ready` probe to report ready status. |
 | `RAG_SERVING_SHM_BASE_PATH` | `string` | `/dev/shm` | Mount path for pod-scoped POSIX shared memory volume (`emptyDir` RAM mount). |
+| `RAG_SERVING_GRPC_TLS_ENABLED` | `boolean` | `false` | Enable TLS encryption on outbound gRPC client inference channels. |
+| `RAG_SERVING_GRPC_CA_CERT_PATH` | `string` | `null` | Filesystem path to root CA certificate verifying Triton server TLS certificates. |
+| `RAG_SERVING_GRPC_CLIENT_CERT_PATH` | `string` | `null` | Filesystem path to client public certificate for mutual TLS (mTLS) authentication. |
+| `RAG_SERVING_GRPC_CLIENT_KEY_PATH` | `string` | `null` | Filesystem path to client private key for mutual TLS (mTLS) authentication. |
+| `RAG_SERVING_GRPC_SERVER_NAME_OVERRIDE` | `string` | `null` | Optional SNI hostname override for TLS certificate validation. |
+| `RAG_SERVING_API_KEY` | `string` | `null` | Optional bearer token / API key securing operational endpoints (`/metrics`). |
+| `RAG_SERVING_LOG_LEVEL` | `string` | `INFO` | Structured logging verbosity level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
+| `PROMETHEUS_SERVER_ADDRESS` | `string` | `http://prometheus-k8s.monitoring.svc:9090` | Prometheus query URL for KEDA `triton_queue_duration_microseconds` autoscaling trigger. |
+| `PROMETHEUS_BEARER_TOKEN` | `string` | `null` | Optional bearer authentication token for secured Prometheus queries. |
+| `KAFKA_BOOTSTRAP_SERVERS` | `string` | `kafka.event-streaming.svc:9092` | Kafka broker endpoints for Batch Ingestion backlog autoscaling trigger. |
+| `KAFKA_CONSUMER_GROUP` | `string` | `rag-batch-embedder-group` | Kafka consumer group name monitored by KEDA `ScaledObject`. |
+| `KAFKA_TOPIC` | `string` | `rag.ingestion.chunks` | Kafka ingestion topic name delivering chunk embeddings. |
+| `KAFKA_SASL_USERNAME` | `string` | `null` | Kafka SASL username for consumer group lag monitoring. |
+| `KAFKA_SASL_PASSWORD` | `string` | `null` | Kafka SASL password for consumer group lag monitoring. |
+| `KAFKA_SASL_MECHANISM` | `string` | `SCRAM-SHA-512` | Kafka SASL mechanism (`SCRAM-SHA-512` or `PLAIN`). |
+| `KAFKA_SECURITY_PROTOCOL` | `string` | `SASL_SSL` | Kafka transport protocol (`SASL_SSL` or `PLAINTEXT`). |
+| `KAFKA_SSL_CA_LOCATION` | `string` | `/etc/ssl/certs/kafka-ca.crt` | Path to Kafka broker CA certificate for TLS verification. |
+| `HF_TOKEN` | `string` | `null` | Hugging Face access token for gated model downloads during export (`scripts/export_onnx.py`). |
+| `AWS_ACCESS_KEY_ID` | `string` | `null` | S3 / MinIO access key ID for pulling serialized TensorRT engines (`model.plan`). |
+| `AWS_SECRET_ACCESS_KEY` | `string` | `null` | S3 / MinIO secret access key for pulling serialized TensorRT engines. |
+| `AWS_DEFAULT_REGION` | `string` | `us-east-1` | AWS region identifier for model registry storage. |
+| `AWS_ENDPOINT_URL` | `string` | `null` | Custom S3 / MinIO / Ceph endpoint URL for cloud-native model engine caches. |
+| `MODEL_REGISTRY_STORAGE_URI` | `string` | `s3://rag-model-cache/tensorrt-engines/` | Artifact storage URI containing precompiled TensorRT model engines. |
 | `MODEL_REPOSITORY` | `string` | `/models` | Directory path containing compiled Triton model repositories. |
 | `TRITON_ARGS` | `string` | `--model-repository=/models --strict-model-config=true --log-verbose=0` | Process supervisor startup flags for `tritonserver`. |
 | `PYTHONUNBUFFERED` | `integer` | `1` | Forces unbuffered stdout/stderr output for real-time JSON log shipping. |

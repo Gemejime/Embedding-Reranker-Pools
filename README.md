@@ -142,8 +142,27 @@ cp .env.example .env
 | `RAG_SERVING_VRAM_CAPACITY_BYTES` | `25769803776` | Total GPU VRAM capacity (24 GiB NVIDIA L4/A10G). |
 | `RAG_SERVING_MAX_STATIC_VRAM_BYTES` | `21474836480` | Static model allocation ceiling ($\le 20\text{ GiB}$, ~83.33%). |
 | `RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO` | `0.85` | Active runtime VRAM ceiling triggering HTTP 503 shedding ($>85\%$). |
-| `RAG_SERVING_MODELS_EXPECTED` | `["online_embedder_ensemble", ...]` | JSON array of model engine names expected healthy for `/ready`. |
 | `RAG_SERVING_SHM_BASE_PATH` | `/dev/shm` | Pod-scoped POSIX shared memory volume (`emptyDir` RAM mount). |
+| `RAG_SERVING_GRPC_TLS_ENABLED` | `false` | Enable TLS encryption on outbound gRPC client inference channels. |
+| `RAG_SERVING_GRPC_CA_CERT_PATH` | `null` | Path to root CA certificate verifying Triton server TLS certificates. |
+| `RAG_SERVING_GRPC_CLIENT_CERT_PATH` | `null` | Path to client public certificate for mutual TLS (mTLS) authentication. |
+| `RAG_SERVING_GRPC_CLIENT_KEY_PATH` | `null` | Path to client private key for mutual TLS (mTLS) authentication. |
+| `RAG_SERVING_GRPC_SERVER_NAME_OVERRIDE` | `null` | Optional SNI hostname override for TLS certificate validation. |
+| `RAG_SERVING_API_KEY` | `null` | Optional bearer token / API key securing operational endpoints (`/metrics`). |
+| `RAG_SERVING_LOG_LEVEL` | `INFO` | Structured logging verbosity level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
+| `PROMETHEUS_SERVER_ADDRESS` | `http://prometheus-k8s.monitoring.svc:9090` | Prometheus query URL for KEDA queue delay autoscaling trigger. |
+| `PROMETHEUS_BEARER_TOKEN` | `null` | Optional bearer authentication token for secured Prometheus queries. |
+| `KAFKA_BOOTSTRAP_SERVERS` | `kafka.event-streaming.svc:9092` | Kafka broker endpoints for Batch Ingestion backlog autoscaling trigger. |
+| `KAFKA_CONSUMER_GROUP` | `rag-batch-embedder-group` | Kafka consumer group name monitored by KEDA `ScaledObject`. |
+| `KAFKA_TOPIC` | `rag.ingestion.chunks` | Kafka ingestion topic name delivering chunk embeddings. |
+| `KAFKA_SASL_USERNAME` | `null` | Kafka SASL username for consumer group lag monitoring. |
+| `KAFKA_SASL_PASSWORD` | `null` | Kafka SASL password for consumer group lag monitoring. |
+| `HF_TOKEN` | `null` | Hugging Face access token for gated model downloads during export (`scripts/export_onnx.py`). |
+| `AWS_ACCESS_KEY_ID` | `null` | S3 / MinIO access key ID for pulling serialized TensorRT engines (`model.plan`). |
+| `AWS_SECRET_ACCESS_KEY` | `null` | S3 / MinIO secret access key for pulling serialized TensorRT engines. |
+| `AWS_DEFAULT_REGION` | `us-east-1` | AWS region identifier for model registry storage. |
+| `AWS_ENDPOINT_URL` | `null` | Custom S3 / MinIO / Ceph endpoint URL for cloud-native model engine caches. |
+| `MODEL_REGISTRY_STORAGE_URI` | `s3://rag-model-cache/tensorrt-engines/` | Artifact storage URI containing precompiled TensorRT model engines. |
 
 ---
 

@@ -85,6 +85,14 @@
 
 ## Session History & Change Log
 
+- **Production Secrets, mTLS & Telemetry Hardening Session**:
+  - Overhauled `.env.example` and `.env` across 14 comprehensive sections including: gRPC Transport Security & Mutual TLS (`RAG_SERVING_GRPC_TLS_ENABLED`, `RAG_SERVING_GRPC_CA_CERT_PATH`, `RAG_SERVING_GRPC_CLIENT_CERT_PATH`, `RAG_SERVING_GRPC_CLIENT_KEY_PATH`, `RAG_SERVING_GRPC_SERVER_NAME_OVERRIDE`), Operational Server Security (`RAG_SERVING_API_KEY`, `RAG_SERVING_LOG_LEVEL`), KEDA Autoscaling Triggers & Telemetry Secrets (`PROMETHEUS_SERVER_ADDRESS`, `PROMETHEUS_BEARER_TOKEN`, `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_CONSUMER_GROUP`, `KAFKA_TOPIC`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD`, `KAFKA_SASL_MECHANISM`, `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SSL_CA_LOCATION`), and Model Registry & Cloud Storage Credentials (`HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_ENDPOINT_URL`, `MODEL_REGISTRY_STORAGE_URI`).
+  - Extended Pydantic `ServingSettings` in `internal/config/settings.py` with full validation for TLS and operational security fields.
+  - Implemented secure SSL channel creation in `TritonGRPCChannelPool` (`internal/client/grpc_pool.py`) supporting CA certificates, mTLS client credentials, and SNI target overrides.
+  - Hardened out-of-band operational ASGI probe server (`internal/server/probe_server.py`) with optional Bearer / API-Key authentication for `/metrics`.
+  - Added unit test suites in `test/unit/test_settings.py`, `test/unit/test_grpc_pool.py`, and `test/unit/test_probe_server.py` expanding test suite to 116 passing tests.
+  - Synchronized documentation in `README.md`, `.ai/doc-api.md`, and `api/openapi/openapi.json`.
+
 - **Architecture Specification & Microservice Documentation Session**:
   - Authored comprehensive root [`Architecture.md`](Architecture.md) focused directly on the `rag-inference-serving` microservice, referencing the Implementation Plan and structured across all 5 Production-Grade Backend Layers (API & Routing, Data Persistence & Memory Models, Architecture & Scale, Security & Identity, and Observability & Quality).
   - Included detailed Mermaid sequence diagrams for Online Query Retrieval (with native backpressure and RRF fallback) and High-Density Batch Chunk Ingestion (with pod-scoped `/dev/shm` IPC and remote batched gRPC over HTTP/2).

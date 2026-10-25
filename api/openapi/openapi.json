@@ -87,6 +87,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing operational API token"
           }
         }
       }
