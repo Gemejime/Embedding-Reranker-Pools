@@ -216,6 +216,53 @@ RAG_SERVING_LOG_LEVEL=DEBUG
             if os.path.exists(tf_path):
                 os.remove(tf_path)
 
+    def test_mtls_pair_validation(self) -> None:
+        """Verify that grpc_client_cert_path and grpc_client_key_path must both be set or unset."""
+        from pydantic import ValidationError
+
+        # Cert set without key fails
+        with self.assertRaises(ValidationError) as ctx:
+            ServingSettings(
+                _env_file=None,
+                grpc_client_cert_path="/path/to/cert.pem",
+                grpc_client_key_path=None,
+            )
+        self.assertIn("must either both be set or both be unset", str(ctx.exception))
+
+        # Key set without cert fails
+        with self.assertRaises(ValidationError) as ctx:
+            ServingSettings(
+                _env_file=None,
+                grpc_client_cert_path=None,
+                grpc_client_key_path="/path/to/key.pem",
+            )
+        self.assertIn("must either both be set or both be unset", str(ctx.exception))
+
+        # Both set succeeds
+        settings = ServingSettings(
+            _env_file=None,
+            grpc_client_cert_path="/path/to/cert.pem",
+            grpc_client_key_path="/path/to/key.pem",
+        )
+        self.assertEqual(settings.grpc_client_cert_path, "/path/to/cert.pem")
+        self.assertEqual(settings.grpc_client_key_path, "/path/to/key.pem")
+
+    def test_empty_string_conversion_nullable_fields(self) -> None:
+        """Verify that empty strings only convert to None for nullable fields."""
+        settings = ServingSettings(
+            _env_file=None,
+            grpc_ca_cert_path="",
+            grpc_client_cert_path="",
+            grpc_client_key_path="",
+            grpc_server_name_override="",
+            api_key="",
+        )
+        self.assertIsNone(settings.grpc_ca_cert_path)
+        self.assertIsNone(settings.grpc_client_cert_path)
+        self.assertIsNone(settings.grpc_client_key_path)
+        self.assertIsNone(settings.grpc_server_name_override)
+        self.assertIsNone(settings.api_key)
+
 
 if __name__ == "__main__":
     unittest.main()

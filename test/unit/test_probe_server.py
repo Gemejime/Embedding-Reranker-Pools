@@ -68,6 +68,15 @@ class TestProbeServer(unittest.TestCase):
         self.assertIn("paths", data)
         self.assertIn("/healthz", data["paths"])
         self.assertIn("/ready", data["paths"])
+        self.assertIn("/metrics", data["paths"])
+        # Verify security schemes and /metrics optional security
+        self.assertIn("securitySchemes", data.get("components", {}))
+        self.assertIn("BearerAuth", data["components"]["securitySchemes"])
+        self.assertIn("ApiKeyAuth", data["components"]["securitySchemes"])
+        metrics_sec = data["paths"]["/metrics"]["get"].get("security", [])
+        self.assertTrue(any("BearerAuth" in s for s in metrics_sec))
+        self.assertTrue(any("ApiKeyAuth" in s for s in metrics_sec))
+        self.assertIn({}, metrics_sec)
 
     def test_metrics_endpoint(self) -> None:
         self.vram_monitor.set_mock_state(
@@ -90,21 +99,30 @@ class TestProbeServer(unittest.TestCase):
         app = create_app(secured_settings)
         client = TestClient(app)
 
-        # 1. Unauthenticated request rejected with 401
+        # 1. Unauthenticated request rejected with 401 and WWW-Authenticate header
         res_unauth = client.get("/metrics")
         self.assertEqual(res_unauth.status_code, 401)
+        self.assertEqual(res_unauth.headers.get("www-authenticate"), "Bearer")
 
         # 2. Invalid bearer token rejected with 401
         res_invalid = client.get("/metrics", headers={"Authorization": "Bearer wrong-token"})
         self.assertEqual(res_invalid.status_code, 401)
+        self.assertEqual(res_invalid.headers.get("www-authenticate"), "Bearer")
 
-        # 3. Valid Bearer token accepted with 200
+        # 3. Non-ASCII header handled gracefully without TypeError
+        res_non_ascii = client.get(
+            "/metrics",
+            headers=[(b"authorization", "Bearer 🔑-utf8-token-🚀".encode())],
+        )
+        self.assertEqual(res_non_ascii.status_code, 401)
+
+        # 4. Valid Bearer token accepted with 200
         res_bearer = client.get(
             "/metrics", headers={"Authorization": "Bearer operational-secret-token"}
         )
         self.assertEqual(res_bearer.status_code, 200)
 
-        # 4. Valid x-api-key header accepted with 200
+        # 5. Valid x-api-key header accepted with 200
         res_apikey = client.get("/metrics", headers={"x-api-key": "operational-secret-token"})
         self.assertEqual(res_apikey.status_code, 200)
 

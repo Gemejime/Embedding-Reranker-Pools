@@ -193,6 +193,35 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
         opts_dict = dict(DEFAULT_GRPC_OPTIONS)
         self.assertEqual(opts_dict.get("grpc.keepalive_permit_without_calls"), 0)
 
+    @patch("grpc.secure_channel")
+    def test_ca_cert_read_failure_propagates(self, mock_secure_channel_fn: MagicMock) -> None:
+        tls_settings = ServingSettings(
+            _env_file=None,
+            online_embed_grpc_url="embed-tls:8001",
+            grpc_tls_enabled=True,
+            grpc_ca_cert_path="/nonexistent/ca.crt",
+        )
+        pool = TritonGRPCChannelPool(settings=tls_settings)
+        with self.assertRaises(FileNotFoundError):
+            pool.get_channel(PoolType.ONLINE_EMBEDDING)
+        pool.close()
+
+    @patch("grpc.secure_channel")
+    def test_client_cert_key_read_failure_propagates(
+        self, mock_secure_channel_fn: MagicMock
+    ) -> None:
+        tls_settings = ServingSettings(
+            _env_file=None,
+            online_embed_grpc_url="embed-tls:8001",
+            grpc_tls_enabled=True,
+            grpc_client_cert_path="/nonexistent/client.crt",
+            grpc_client_key_path="/nonexistent/client.key",
+        )
+        pool = TritonGRPCChannelPool(settings=tls_settings)
+        with self.assertRaises(FileNotFoundError):
+            pool.get_channel(PoolType.ONLINE_EMBEDDING)
+        pool.close()
+
 
 if __name__ == "__main__":
     unittest.main()

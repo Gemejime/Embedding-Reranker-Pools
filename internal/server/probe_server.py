@@ -7,6 +7,7 @@ Runs on port 8080 alongside Triton:
 - Structured Secured Logging with RFC 7807/9457 error formatting and zero customer query/chunk text emission.
 """
 
+import hmac
 import time
 import uuid
 from collections.abc import Callable
@@ -16,6 +17,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -169,6 +171,39 @@ def create_app(settings: ServingSettings | None = None) -> FastAPI:
     vram_monitor = VRAMMonitor(active_settings)
     app.state.vram_monitor = vram_monitor
     app.state.settings = active_settings
+
+    def custom_openapi() -> dict[str, Any]:
+        if app.openapi_schema:
+            return app.openapi_schema
+        openapi_schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+        )
+        openapi_schema.setdefault("components", {})["securitySchemes"] = {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "Optional bearer token authentication for operational metrics scraping.",
+            },
+            "ApiKeyAuth": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "x-api-key",
+                "description": "Optional API key header authentication for operational metrics scraping.",
+            },
+        }
+        if "/metrics" in openapi_schema.get("paths", {}):
+            openapi_schema["paths"]["/metrics"]["get"]["security"] = [
+                {"BearerAuth": []},
+                {"ApiKeyAuth": []},
+                {},
+            ]
+        app.openapi_schema = openapi_schema
+        return app.openapi_schema
+
+    app.openapi = custom_openapi  # type: ignore[method-assign]
 
     @app.middleware("http")
     async def secured_logging_middleware(
@@ -325,12 +360,20 @@ def create_app(settings: ServingSettings | None = None) -> FastAPI:
         if active_settings.api_key:
             auth_header = request.headers.get("authorization", "")
             api_key_header = request.headers.get("x-api-key", "")
-            expected = active_settings.api_key
-            valid = auth_header == f"Bearer {expected}" or api_key_header == expected
+            expected_key_bytes = active_settings.api_key.encode("utf-8")
+            expected_bearer_bytes = f"Bearer {active_settings.api_key}".encode()
+
+            auth_bytes = auth_header.encode("utf-8")
+            api_key_bytes = api_key_header.encode("utf-8")
+
+            valid = hmac.compare_digest(auth_bytes, expected_bearer_bytes) or hmac.compare_digest(
+                api_key_bytes, expected_key_bytes
+            )
             if not valid:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Unauthorized: invalid or missing operational API token",
+                    headers={"WWW-Authenticate": "Bearer"},
                 )
         used_bytes, capacity_bytes, ratio = await vram_monitor.get_vram_stats()
         lines = [

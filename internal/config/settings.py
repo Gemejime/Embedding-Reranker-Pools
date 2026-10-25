@@ -186,9 +186,16 @@ class ServingSettings(BaseSettings):
         else:
             pool = pool_type_raw
 
-        # Convert empty strings from .env into None so optional fields and defaults apply cleanly
-        for key, value in list(data.items()):
-            if value == "":
+        # Convert empty strings from .env into None only for nullable fields
+        nullable_fields = {
+            "grpc_ca_cert_path",
+            "grpc_client_cert_path",
+            "grpc_client_key_path",
+            "grpc_server_name_override",
+            "api_key",
+        }
+        for key in nullable_fields:
+            if data.get(key) == "":
                 data[key] = None
 
         if not data.get("max_queue_delay_microseconds"):
@@ -223,6 +230,17 @@ class ServingSettings(BaseSettings):
                 data[field] = triton_grpc
 
         return data
+
+    @model_validator(mode="after")
+    def validate_mtls_pair(self) -> "ServingSettings":
+        """Validate that client mTLS certificate and private key paths are both set or both unset."""
+        has_cert = bool(self.grpc_client_cert_path)
+        has_key = bool(self.grpc_client_key_path)
+        if has_cert != has_key:
+            raise ValueError(
+                "grpc_client_cert_path and grpc_client_key_path must either both be set or both be unset"
+            )
+        return self
 
 
 @lru_cache(maxsize=1)

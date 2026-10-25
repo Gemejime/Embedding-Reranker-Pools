@@ -128,21 +128,15 @@ class TritonGRPCChannelPool:
                 if self._settings.grpc_tls_enabled:
                     root_certs: bytes | None = None
                     if self._settings.grpc_ca_cert_path:
-                        try:
-                            with open(self._settings.grpc_ca_cert_path, "rb") as f:
-                                root_certs = f.read()
-                        except Exception as exc:
-                            logger.error("Failed to read root CA certificate", exc_info=exc)
+                        with open(self._settings.grpc_ca_cert_path, "rb") as f:
+                            root_certs = f.read()
                     private_key: bytes | None = None
                     cert_chain: bytes | None = None
                     if self._settings.grpc_client_key_path and self._settings.grpc_client_cert_path:
-                        try:
-                            with open(self._settings.grpc_client_key_path, "rb") as f:
-                                private_key = f.read()
-                            with open(self._settings.grpc_client_cert_path, "rb") as f:
-                                cert_chain = f.read()
-                        except Exception as exc:
-                            logger.error("Failed to read client mTLS cert/key", exc_info=exc)
+                        with open(self._settings.grpc_client_key_path, "rb") as f:
+                            private_key = f.read()
+                        with open(self._settings.grpc_client_cert_path, "rb") as f:
+                            cert_chain = f.read()
 
                     credentials = grpc.ssl_channel_credentials(
                         root_certificates=root_certs,
