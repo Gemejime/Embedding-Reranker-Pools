@@ -6,60 +6,148 @@ Hardware-accelerated embedding generation and candidate reranking microservice f
 
 ## 1. Architectural Overview & Compute Pool Topology
 
-To protect online search latencies from high-volume document ingestion workloads and prevent GPU Streaming Multiprocessor (SM) thread stalls, compute is partitioned into **three physically decoupled GPU pools** across isolated Kubernetes node groups:
+To protect online search latencies from high-volume document ingestion workloads and prevent GPU Streaming Multiprocessor (SM) thread stalls, compute is partitioned into **three physically decoupled GPU compute pools** across isolated Kubernetes node groups:
 
 ```mermaid
 graph TD
-    subgraph Online Retrieval Plane
-        ClientSearch["rag-search-orchestrator<br/>(Go Microservice)"]
-        PoolA["<b>Pool A: Online Embedding Pool</b><br/>NVIDIA L4 / A10G (On-Demand)<br/>P99 &le; 10ms @ 1,500 QPS<br/>Max Batch: 32 | Delay: &le; 2ms"]
-        PoolB["<b>Pool B: Online Reranker Pool</b><br/>NVIDIA L4 / A10G (On-Demand)<br/>P99 &le; 30ms (10-30 candidates)<br/>Max Batch: 32 | Delay: &le; 4ms"]
+    subgraph Online Retrieval Plane [Dedicated On-Demand Node Groups]
+        SearchOrch["rag-search-orchestrator<br/>(Go Microservice)"]
+        PoolA["<b>Pool A: Online Embedding Pool</b><br/>NVIDIA L4 / A10G (24 GB VRAM)<br/>Max Batch: 32 | Delay: &le; 2ms<br/>P99 &le; 10ms @ 1,500 QPS"]
+        PoolB["<b>Pool B: Online Reranker Pool</b><br/>NVIDIA L4 / A10G (24 GB VRAM)<br/>Max Batch: 32 | Delay: &le; 4ms<br/>P99 &le; 30ms (10-30 candidates)"]
     end
 
-    subgraph Batch Ingestion Plane
-        ClientBatch["rag-chunk-lifecycle-service<br/>(Ingestion Pipeline)"]
-        PoolC["<b>Batch Ingestion Pool</b><br/>12-16x Spot GPU Nodes<br/>2,500-3,500 chunks/sec per node<br/>&ge; 40,000 chunks/sec aggregate<br/>Max Batch: 256 | Delay: &le; 50ms"]
+    subgraph Batch Ingestion Plane [Preemptible Spot Node Groups]
+        LifecycleSvc["rag-chunk-lifecycle-service<br/>(Ingestion Pipeline)"]
+        PoolC["<b>Batch Ingestion Pool</b><br/>12-16x NVIDIA L4 / A10G Spot Nodes<br/>Max Batch: 256 | Delay: &le; 50ms<br/>2,500-3,500 chunks/sec per node<br/>&ge; 40,000 chunks/sec aggregate"]
     end
 
-    ClientSearch -->|"gRPC HTTP/2 (15ms budget)"| PoolA
-    ClientSearch -->|"gRPC HTTP/2 (35ms budget)"| PoolB
-    ClientBatch -->|"Local: /dev/shm (8 GiB)<br/>Remote: gRPC HTTP/2"| PoolC
+    SearchOrch -->|"Direct gRPC HTTP/2 (15ms deadline)"| PoolA
+    SearchOrch -->|"Direct gRPC HTTP/2 (35ms deadline)"| PoolB
+    LifecycleSvc -->|"Local: Pod /dev/shm (8 GiB emptyDir)<br/>Remote: Batched gRPC HTTP/2"| PoolC
+
+    PoolB -.->|"Saturated? (RESOURCE_EXHAUSTED)"| RRFFallback["Instant Fallback to Un-Reranked RRF<br/>1.0 / (60.0 + rank)"]
 ```
 
 ### Decoupled Pool Hardware & SLO Matrix
 
 | Pool Identity | Target Hardware | Node Group Lifecycle | Queue Delay Ceiling | Max Batch Size | Calibrated SLI / SLO Target |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Pool A: Online Embedding** | NVIDIA L4 / A10G (24 GB) | Dedicated On-Demand | $\le 2\text{ ms}$ | 32 | P99 latency $\le 10\text{ ms}$ at 1,500 single-sentence QPS |
-| **Pool B: Online Reranker** | NVIDIA L4 / A10G (24 GB) | Dedicated On-Demand | $\le 4\text{ ms}$ | 32 | P99 latency $\le 30\text{ ms}$ for 10–30 candidate document pairs |
-| **Batch Ingestion Pool** | 12–16x NVIDIA L4 / A10G | Preemptible Spot | $\le 50\text{ ms}$ | 256 | $2{,}500\text{--}3{,}500\text{ chunks/sec}$ per node; aggregate $\ge 40{,}000\text{ chunks/sec}$ |
+| **Pool A: Online Embedding** | 1x NVIDIA L4 / A10G (24 GB) | Dedicated On-Demand | $\le 2\text{ ms}$ ($2000\mu\text{s}$) | 32 | Standalone P99 latency $\le 10\text{ ms}$ at 1,500 single-sentence QPS |
+| **Pool B: Online Reranker** | 1x NVIDIA L4 / A10G (24 GB) | Dedicated On-Demand | $\le 4\text{ ms}$ ($4000\mu\text{s}$) | 32 | Standalone P99 latency $\le 30\text{ ms}$ for 10–30 candidate document pairs |
+| **Batch Ingestion Pool** | 12–16x NVIDIA L4 / A10G | Preemptible Spot | $\le 50\text{ ms}$ ($50000\mu\text{s}$) | 256 | $2{,}500\text{--}3{,}500\text{ chunks/sec}$ per node; aggregate $\ge 40{,}000\text{ chunks/sec}$ |
 
 Cumulative search budget: **$\le 40\text{ ms}$ P99** (dense embedding + cross-encoder reranking).
 
 ---
 
-## 2. In-Engine C++ Tokenization & Triton Ensemble Pipelines
+## 2. Streamlined Repository Structure
+
+```
+rag-inference-serving/
+├── api/
+│   ├── openapi/
+│   │   └── openapi.json                 # OpenAPI 3.1 specification schema
+│   └── proto/v1/
+│       ├── triton_stubs.proto           # KServe v2 Protobuf definitions
+│       ├── triton_stubs_pb2.py          # Generated gRPC request/response stubs
+│       └── triton_stubs_pb2_grpc.py     # Generated gRPC client/server interfaces
+├── config/
+│   └── triton/
+│       ├── online_embedding_repository/ # Pool A model repository
+│       │   ├── text_tokenizer/          # In-engine C++ HuggingFace tokenizer
+│       │   ├── dense_embedder_trt/      # TensorRT FP16 engine (max batch 32, delay 2ms)
+│       │   └── online_embedder_ensemble/# Triton ensemble pipeline
+│       ├── online_reranker_repository/  # Pool B model repository
+│       │   ├── text_tokenizer/          # In-engine candidate pair tokenizer
+│       │   ├── cross_encoder_trt/       # TensorRT FP16 engine (max batch 32, delay 4ms)
+│       │   └── online_reranker_ensemble/# Triton ensemble pipeline
+│       └── batch_ingestion_repository/  # Batch Ingestion model repository
+│           ├── text_tokenizer/          # Bulk chunk tokenizer
+│           ├── dense_embedder_trt/      # TensorRT FP16 engine (max batch 256, delay 50ms)
+│           └── batch_embedder_ensemble/ # Triton ensemble pipeline
+├── deployments/
+│   ├── argocd/                          # GitOps ApplicationSets & Canary Rollouts
+│   ├── docker/
+│   │   ├── Dockerfile.triton            # Hardened CUDA 12.4 + TensorRT container image
+│   │   └── entrypoint.sh                # Dual process supervisor (Triton + FastAPI ASGI)
+│   └── helm/                            # Helm charts with KEDA autoscaling rules
+├── internal/
+│   ├── client/                          # KServe v2 codec, gRPC pool, circuit breaker
+│   ├── config/                          # Pydantic ServingSettings (RAG_SERVING_ prefix)
+│   ├── logging/                         # Secured structured JSON logging (redacted)
+│   ├── server/                          # Out-of-band operational ASGI server (:8080)
+│   └── shm/                             # Pod-scoped POSIX shared memory (/dev/shm)
+├── scripts/
+│   ├── build_trt_engine.py              # TensorRT FP16 engine compilation runner
+│   ├── build_trt_engine.sh              # Standalone trtexec build script
+│   ├── export_onnx.py                   # HuggingFace model export to ONNX
+│   └── export_tokenizer.py              # In-engine tokenizer artifact export
+├── test/
+│   ├── benchmark/                       # Single-node & multi-node load sweep benchmarks
+│   ├── chaos/                           # Queue saturation, CUDA stalls, spot eviction
+│   ├── integration/                     # Direct client integration test suites
+│   └── unit/                            # Component unit tests (100% passing)
+├── .env.example                         # Environment configuration template
+├── Architecture.md                      # Comprehensive 5-layer backend architecture
+├── Makefile                             # Build, test, lint, and typecheck automation
+└── pyproject.toml                       # Python dependencies and tool configurations
+```
+
+---
+
+## 3. In-Engine C++ Tokenization & Triton Ensemble Pipelines
 
 Tokenization executes directly inside the Triton inference engine via C++ tokenizer runtimes chained to TensorRT FP16 engines using Triton Ensemble Pipelines, eliminating Python Global Interpreter Lock (GIL) bottlenecks:
 
 - `online_embedder_ensemble`: Chains `text_tokenizer` (512 max tokens) $\rightarrow$ `dense_embedder_trt` (FP16 `.plan` with baked mean-pooling and L2 normalization).
 - `online_reranker_ensemble`: Chains candidate pair tokenizer (`query` + `passage`, 2048 max tokens) $\rightarrow$ `cross_encoder_trt` (FP16 `.plan` producing normalized scalar logits).
-- `batch_embedder_ensemble`: Chains high-throughput tokenizer (512 max tokens) $\rightarrow$ `dense_embedder_trt` ($1 \le \text{batch} \le 256$).
+- `batch_embedder_ensemble`: Chains high-throughput tokenizer (512 max tokens) $\rightarrow$ `dense_embedder_trt` ($1 \le \text{batch} \le 256$, 50 ms delay ceiling).
 
 ---
 
-## 3. High-Performance Client Integration & Native Circuit Breaking
+## 4. High-Performance Client Integration & Native Circuit Breaking
 
 - **KServe v2 Binary Tensor Codec (`internal/client/kserve_codec.py`)**: Pack/unpack string tensors using 4-byte little-endian length prefixes and FP16 byte buffers using NumPy zero-copy memoryviews.
-- **gRPC Connection Pooling (`internal/client/grpc_pool.py`)**: Discrete channel pools maintaining dedicated HTTP/2 keepalive connections per pool type.
-- **Resilient Circuit Breaker (`internal/client/circuit_breaker.py`)**: 3-state machine (`CLOSED`, `OPEN`, `HALF_OPEN`) tripping on Triton queue saturation (`RESOURCE_EXHAUSTED`), timeouts (`DEADLINE_EXCEEDED`), or unavailability (`UNAVAILABLE`).
-- **Un-Reranked RRF Fallback**: When circuit breaker trips, instantly emits deterministic Reciprocal Rank Fusion (RRF) scores without degrading retrieval latency:
+- **gRPC Connection Pooling (`internal/client/grpc_pool.py`)**: Thread-safe channel pools maintaining dedicated HTTP/2 keepalive connections per pool type (`keepalive_time_ms=10000`, `keepalive_timeout_ms=5000`).
+- **Resilient Circuit Breaker (`internal/client/circuit_breaker.py`)**: 3-state machine (`CLOSED`, `OPEN`, `HALF_OPEN`) tripping on Triton queue saturation (`RESOURCE_EXHAUSTED`), timeouts (`DEADLINE_EXCEEDED`), or pod restarts (`UNAVAILABLE`).
+- **Un-Reranked RRF Fallback**: When the circuit breaker trips, it instantly emits deterministic Reciprocal Rank Fusion (RRF) scores without degrading retrieval latency:
   $$RRF(d) = \frac{1.0}{60.0 + rank(d)}$$
-- **Secured Logging**: Structured JSON logging strictly redacting raw query text, chunk payloads, and raw tensor floats.
+- **Secured Structured Logging (`internal/logging/secured_logger.py`)**: Structured JSON logging strictly redacting raw query text, chunk payloads, and raw tensor floats.
 
 ---
 
-## 4. Setup, Model Export & TensorRT Compilation
+## 5. Environment Configuration
+
+All operational and pool settings are managed via 12-factor environment variables backed by Pydantic `ServingSettings` in [`internal/config/settings.py`](file:///c:/Users/ANIK/Desktop/Gemejime/Embedding%20&%20Reranker%20Pools/internal/config/settings.py):
+
+```bash
+# Copy template and customize for target pool
+cp .env.example .env
+```
+
+### Core Environment Variables Reference
+
+| Variable Name | Default Value | Description / Invariant |
+| :--- | :--- | :--- |
+| `RAG_SERVING_POOL_TYPE` | `online_embedding` | Target pool: `online_embedding`, `online_reranker`, `batch_ingestion`. |
+| `RAG_SERVING_SERVER_HOST` | `0.0.0.0` | Host interface for out-of-band operational ASGI server. |
+| `RAG_SERVING_SERVER_PORT` | `8080` | Port for ASGI server (`/healthz`, `/ready`, `/metrics`, `/docs`, `/api/docs`). |
+| `RAG_SERVING_TRITON_HTTP_URL` | `http://localhost:8000` | Internal Triton HTTP endpoint for KServe v2 health/readiness. |
+| `RAG_SERVING_TRITON_GRPC_URL` | `localhost:8001` | Internal Triton gRPC endpoint for KServe v2 binary tensor inference. |
+| `RAG_SERVING_ONLINE_EMBED_GRPC_URL` | `localhost:8001` | Upstream channel target for Online Embedding Pool (Pool A). |
+| `RAG_SERVING_ONLINE_RERANK_GRPC_URL` | `localhost:8001` | Upstream channel target for Online Reranker Pool (Pool B). |
+| `RAG_SERVING_BATCH_INGEST_GRPC_URL` | `localhost:8001` | Upstream channel target for Batch Ingestion Pool. |
+| `RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS` | `2000` | Triton dynamic batch delay timeout ($\le 2\text{ ms}$ embed, $\le 4\text{ ms}$ rerank, $\le 50\text{ ms}$ batch). |
+| `RAG_SERVING_MAX_BATCH_SIZE` | `32` | Maximum dynamic batch size ceiling (32 for online pools, 256 for batch). |
+| `RAG_SERVING_VRAM_CAPACITY_BYTES` | `25769803776` | Total GPU VRAM capacity (24 GiB NVIDIA L4/A10G). |
+| `RAG_SERVING_MAX_STATIC_VRAM_BYTES` | `21474836480` | Static model allocation ceiling ($\le 20\text{ GiB}$, ~83.33%). |
+| `RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO` | `0.85` | Active runtime VRAM ceiling triggering HTTP 503 shedding ($>85\%$). |
+| `RAG_SERVING_MODELS_EXPECTED` | `["online_embedder_ensemble", ...]` | JSON array of model engine names expected healthy for `/ready`. |
+| `RAG_SERVING_SHM_BASE_PATH` | `/dev/shm` | Pod-scoped POSIX shared memory volume (`emptyDir` RAM mount). |
+
+---
+
+## 6. Setup, Model Export & TensorRT Compilation
 
 ### Prerequisites
 - Python 3.11+
@@ -71,11 +159,8 @@ Tokenization executes directly inside the Triton inference engine via C++ tokeni
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt  # Or install dependencies via pip
-
-# Configure environment variables from template
-cp .env.example .env  # On Windows: copy .env.example .env
+cp .env.example .env
 ```
-
 
 ### Export ONNX & Tokenizers
 ```bash
@@ -100,7 +185,7 @@ python scripts/build_trt_engine.py --model-type batch_ingest --onnx-path models/
 
 ---
 
-## 5. Running the Service
+## 7. Running the Service
 
 ### Operational Probe Server (ASGI)
 Run the out-of-band operational health and monitoring server:
@@ -123,7 +208,7 @@ docker build -f deployments/docker/Dockerfile.triton -t rag-inference-serving:la
 
 ---
 
-## 6. Testing, Benchmarks & Chaos Suite
+## 8. Testing, Benchmarks & Chaos Suite
 
 Run tests via `make` or `pytest`:
 
@@ -153,7 +238,7 @@ make test-chaos
 
 ---
 
-## 7. Kubernetes KEDA Autoscaling & GitOps ArgoCD Deployment
+## 9. Kubernetes KEDA Autoscaling & GitOps ArgoCD Deployment
 
 ### Calibrated KEDA Prometheus Trigger
 Autoscaling scales on **average queue delay per request** rather than raw counter rates:
@@ -173,3 +258,14 @@ Deploys:
 3. `rag-inference-batch-ingestion` targeting preemptible spot GPU nodes via `deployments/helm/values-batch-ingestion.yaml`.
 
 Canary progressive rollouts for TensorRT engine updates are managed via `deployments/argocd/rollout-canary.yaml`.
+
+---
+
+## 10. Operational Runbooks & Troubleshooting
+
+- **Runbook 1: Online Queue Wait Time Alerts**:
+  If `triton_queue_duration_microseconds` exceeds warning thresholds ($4\text{ ms}$ for embeddings, $8\text{ ms}$ for rerankers), verify traffic rates against baseline capacity ($1,500\text{ QPS}$), ensure KEDA scales pod replicas, and confirm upstream orchestrators fall back gracefully to un-reranked RRF scores.
+- **Runbook 2: Managing CUDA Out-Of-Memory Conditions**:
+  If `triton_gpu_memory_used_bytes` approaches 85% ($>20.4\text{ GiB}$), verify sequence context limits ($512$ tokens for embeddings, $2048$ tokens for cross-encoders) and dynamic batch ceilings ($32$ for online, $256$ for batch).
+- **Runbook 3: Ingestion Cluster Throughput Lags**:
+  If aggregate throughput lags below $40{,}000\text{ chunks/sec}$, monitor Kafka lag and scale out the spot GPU node group up to 16 nodes.
