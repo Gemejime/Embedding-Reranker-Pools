@@ -103,6 +103,14 @@
   - Overhauled [`README.md`](README.md) into a production-grade operational guide featuring architecture diagrams, streamlined folder tree matching the implementation plan, environment variable references, local setup, model export, TensorRT compilation, testing suites, KEDA autoscaling, and ArgoCD GitOps pipelines.
   - Verified clean linters (ruff), strict typecheckers (mypy), and test suites.
 
+- **Code Review Remediation & Quality Hardening Session**:
+  - Re-aligned pyproject.toml runtime dependencies: declared `grpcio>=1.84.0` matching `GRPC_GENERATED_VERSION` in compiled stubs, and aligned protobuf requirement floor (`protobuf>=7.35.1,<8.0.0`) with runtime checks in `triton_stubs_pb2.py`.
+  - Updated `internal/client/batch_client.py` to raise fail-fast `RuntimeError` on empty `raw_output_contents` in SHM response, matching the gRPC transport path rather than returning placeholder zeros.
+  - Updated `internal/client/grpc_pool.py` `DEFAULT_GRPC_OPTIONS` setting `grpc.keepalive_permit_without_calls = 0` to eliminate unnecessary keepalive frames while idle.
+  - Hardened `internal/client/search_client.py` reranker exception handler to evaluate `is_tripping_error(exc)` before invoking `record_failure(exc)`, preventing non-tripping errors from tripping the circuit breaker while preserving deterministic un-reranked RRF fallbacks.
+  - Updated `.ai/doc-api.md` queue rejection tripping triggers to accurately reflect the 64-request queue limit and 10 ms timeout policy rather than conflating it with the 4 ms dynamic batching window.
+  - Added unit test coverage across all modified components with 100% clean test passes, Ruff lint/format conformance, and strict Mypy validation.
+
 - **Environment Configuration Template & Validation Session**:
 
   - Authored comprehensive environment configuration template (`.env.example`) defining all operational parameters across 10 structured sections: Service Identity & Topology (`RAG_SERVING_POOL_TYPE`), Out-of-band ASGI Server (`RAG_SERVING_SERVER_HOST`, `RAG_SERVING_SERVER_PORT`), Triton KServe v2 URLs, Decoupled Pool gRPC Targets, Calibrated Dynamic Batching Ceilings (`RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS`, `RAG_SERVING_MAX_BATCH_SIZE`), VRAM Headroom Guards (`RAG_SERVING_VRAM_CAPACITY_BYTES`, `RAG_SERVING_MAX_STATIC_VRAM_BYTES`, `RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO`), Expected Model Engines (`RAG_SERVING_MODELS_EXPECTED`), POSIX SHM Mounts (`RAG_SERVING_SHM_BASE_PATH`), Triton Container Supervisor (`MODEL_REPOSITORY`, `TRITON_ARGS`), and Benchmark Test Orchestration (`LIVE_TRITON`, `TRITON_ONLINE_GRPC_TARGET`, `TRITON_BATCH_GRPC_TARGET`, `TRITON_CLUSTER_ENDPOINTS`).

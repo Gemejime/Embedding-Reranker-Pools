@@ -630,7 +630,7 @@ Direct binary encoding avoiding JSON serialization overhead:
 - **Keepalive Parameters**:
   - `grpc.keepalive_time_ms = 10000` (10s pings)
   - `grpc.keepalive_timeout_ms = 5000` (5s ack timeout)
-  - `grpc.keepalive_permit_without_calls = 1`
+  - `grpc.keepalive_permit_without_calls = 0` (idle pinging disabled)
   - `grpc.http2.max_pings_without_data = 0`
   - `grpc.max_receive_message_length = 67108864` (64 MiB)
   - `grpc.max_send_message_length = 67108864` (64 MiB)
@@ -653,7 +653,7 @@ The `RerankerCircuitBreaker` protects online query latency budgets against Trito
       OPEN --> OPEN : Instant un-reranked RRF fallback (bypasses gRPC)
   ```
 - **Tripping Triggers**:
-  - `RESOURCE_EXHAUSTED` (Triton dynamic batch queue rejection when queue latency exceeds 4 ms)
+  - `RESOURCE_EXHAUSTED` (Triton queue rejection according to reranker queue policy: 64-request queue limit or 10 ms queue timeout with REJECT action; distinct from the 4 ms dynamic batching window)
   - `DEADLINE_EXCEEDED` (Client-side 35 ms latency budget breach)
   - `UNAVAILABLE` (Pod restarts or spot node evictions)
 - **Deterministic Un-Reranked RRF Fallback**:
