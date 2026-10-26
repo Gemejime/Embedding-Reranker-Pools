@@ -20,7 +20,7 @@ spec:
           query: |
             sum(rate(nv_inference_request_success{job="{{args.service-name}}"}[1m]))
             /
-            clamp_min(sum(rate(nv_inference_request_duration_us_count{job="{{args.service-name}}"}[1m])), 0.001)
+            clamp_min(sum(rate(nv_inference_request_success{job="{{args.service-name}}"}[1m])) + sum(rate(nv_inference_request_failure{job="{{args.service-name}}"}[1m])), 0.001)
     - name: p99-queue-latency
       interval: 30s
       successCondition: result[0] <= 10000

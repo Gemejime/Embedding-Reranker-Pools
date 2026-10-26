@@ -3,7 +3,7 @@
 import os
 import unittest
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 
 class TestArgoCDConfigs(unittest.TestCase):
@@ -37,6 +37,7 @@ class TestArgoCDConfigs(unittest.TestCase):
         # Verify Helm path and sync policy
         template = data["spec"]["template"]["spec"]
         self.assertEqual(template["source"]["path"], "deployments/helm")
+        self.assertEqual(template["source"]["targetRevision"], "main")
         self.assertTrue(template["syncPolicy"]["automated"]["prune"])
         self.assertTrue(template["syncPolicy"]["automated"]["selfHeal"])
         self.assertIn("CreateNamespace=true", template["syncPolicy"]["syncOptions"])
@@ -49,6 +50,7 @@ class TestArgoCDConfigs(unittest.TestCase):
         self.assertEqual(data["kind"], "Application")
         self.assertEqual(data["metadata"]["name"], "rag-inference-online-embedding")
         self.assertEqual(data["metadata"]["labels"]["lifecycle"], "on-demand")
+        self.assertEqual(data["spec"]["source"]["targetRevision"], "main")
         self.assertIn("values-online-embed.yaml", data["spec"]["source"]["helm"]["valueFiles"])
         self.assertEqual(data["spec"]["destination"]["namespace"], "rag-inference-serving")
         self.assertTrue(data["spec"]["syncPolicy"]["automated"]["prune"])
@@ -61,6 +63,7 @@ class TestArgoCDConfigs(unittest.TestCase):
         self.assertEqual(data["kind"], "Application")
         self.assertEqual(data["metadata"]["name"], "rag-inference-online-reranker")
         self.assertEqual(data["metadata"]["labels"]["lifecycle"], "on-demand")
+        self.assertEqual(data["spec"]["source"]["targetRevision"], "main")
         self.assertIn("values-online-rerank.yaml", data["spec"]["source"]["helm"]["valueFiles"])
         self.assertEqual(data["spec"]["destination"]["namespace"], "rag-inference-serving")
         self.assertTrue(data["spec"]["syncPolicy"]["automated"]["prune"])
@@ -73,6 +76,7 @@ class TestArgoCDConfigs(unittest.TestCase):
         self.assertEqual(data["kind"], "Application")
         self.assertEqual(data["metadata"]["name"], "rag-inference-batch-ingestion")
         self.assertEqual(data["metadata"]["labels"]["lifecycle"], "spot")
+        self.assertEqual(data["spec"]["source"]["targetRevision"], "main")
         self.assertIn("values-batch-ingestion.yaml", data["spec"]["source"]["helm"]["valueFiles"])
         self.assertEqual(data["spec"]["destination"]["namespace"], "rag-inference-serving")
         self.assertTrue(data["spec"]["syncPolicy"]["automated"]["prune"])
@@ -87,6 +91,11 @@ class TestArgoCDConfigs(unittest.TestCase):
         steps = canary["steps"]
         weights = [s["setWeight"] for s in steps if "setWeight" in s]
         self.assertEqual(weights, [20, 50, 100])
+        container = data["spec"]["template"]["spec"]["containers"][0]
+        self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
+        mount_paths = [m["mountPath"] for m in container["volumeMounts"]]
+        self.assertIn("/dev/shm", mount_paths)
+        self.assertIn("/tmp/triton", mount_paths)
 
     def test_analysistemplate_manifest(self) -> None:
         path = os.path.join(self.argocd_dir, "analysistemplate.yaml")
@@ -99,6 +108,11 @@ class TestArgoCDConfigs(unittest.TestCase):
         self.assertIn("service-name", arg_names)
         metric_names = [m["name"] for m in data["spec"]["metrics"]]
         self.assertIn("success-rate", metric_names)
+        success_metric = [m for m in data["spec"]["metrics"] if m["name"] == "success-rate"][0]
+        query = success_metric["provider"]["prometheus"]["query"]
+        self.assertIn("nv_inference_request_success", query)
+        self.assertIn("nv_inference_request_failure", query)
+        self.assertIn("clamp_min", query)
 
 
 if __name__ == "__main__":

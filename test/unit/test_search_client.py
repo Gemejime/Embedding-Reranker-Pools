@@ -11,7 +11,7 @@ from api.proto.v1.triton_stubs_pb2 import (
     InferOutputTensor,
     ModelInferResponse,
 )
-from internal.client.circuit_breaker import RerankerCircuitBreaker
+from internal.client.circuit_breaker import CircuitState, RerankerCircuitBreaker
 from internal.client.kserve_codec import pack_fp16_tensor
 from internal.client.models import CandidateDocument
 from internal.client.search_client import SearchOrchestratorClient
@@ -172,6 +172,24 @@ class TestSearchClient(unittest.TestCase):
         self.assertTrue(results[0].fallback_applied)
         # Verify circuit breaker consecutive failures was NOT incremented
         self.assertEqual(self.circuit_breaker._consecutive_failures, 0)
+
+    def test_rerank_non_tripping_error_in_half_open_releases_probe(self) -> None:
+        candidates = [
+            CandidateDocument(id="doc-1", passage="Passage 1", initial_rank=1),
+        ]
+        self.circuit_breaker._state = CircuitState.HALF_OPEN
+        self.circuit_breaker._consecutive_failures = 3
+
+        self.mock_rerank_stub.ModelInfer.side_effect = DummyRpcError(
+            grpc.StatusCode.INVALID_ARGUMENT
+        )
+
+        results = self.client.rerank("query", candidates)
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0].fallback_applied)
+        self.assertEqual(self.circuit_breaker._state, CircuitState.HALF_OPEN)
+        self.assertEqual(self.circuit_breaker._half_open_probes, 0)
+        self.assertTrue(self.circuit_breaker.can_execute())
 
     def test_rerank_circuit_open_instant_fallback(self) -> None:
         candidates = [

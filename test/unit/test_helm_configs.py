@@ -3,7 +3,7 @@
 import os
 import unittest
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 
 class TestHelmConfigs(unittest.TestCase):
@@ -26,6 +26,10 @@ class TestHelmConfigs(unittest.TestCase):
         self.assertTrue(data["modelStorage"]["readOnly"])
         self.assertEqual(data["service"]["operationalPort"], 8080)
         self.assertEqual(data["service"]["grpcPort"], 8001)
+        trigger = data["autoscaling"]["triggers"][0]
+        self.assertEqual(trigger["metadata"]["metricName"], "nv_inference_queue_duration_us")
+        self.assertIn("nv_inference_queue_duration_us", trigger["metadata"]["query"])
+        self.assertIn("nv_inference_count", trigger["metadata"]["query"])
 
     def test_online_embed_overlay(self) -> None:
         embed_path = os.path.join(self.helm_dir, "values-online-embed.yaml")

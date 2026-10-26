@@ -15,7 +15,7 @@ from concurrent import futures
 from typing import Any
 
 import grpc
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 from api.proto.v1.triton_stubs_pb2 import (
     InferOutputTensor,

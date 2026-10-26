@@ -57,7 +57,7 @@ spec:
           image: enterprise-rag/triton-inference-serving:v1.0.0
           imagePullPolicy: IfNotPresent
           securityContext:
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             capabilities:
               drop:
@@ -93,6 +93,8 @@ spec:
           volumeMounts:
             - name: shm-volume
               mountPath: /dev/shm
+            - name: tmp-triton
+              mountPath: /tmp/triton
             - name: model-engines
               mountPath: /models
               readOnly: true
@@ -117,6 +119,8 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 8Gi
+        - name: tmp-triton
+          emptyDir: {}
         - name: model-engines
           persistentVolumeClaim:
             claimName: model-cache-pvc

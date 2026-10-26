@@ -45,7 +45,7 @@ spec:
       project: default
       source:
         repoURL: https://github.com/enterprise-rag/rag-inference-serving.git
-        targetRevision: rag-inference-serving
+        targetRevision: main
         path: deployments/helm
         helm:
           valueFiles:

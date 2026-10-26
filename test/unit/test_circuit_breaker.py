@@ -97,6 +97,26 @@ class TestCircuitBreaker(unittest.TestCase):
         self.assertEqual(self.breaker.state, CircuitState.OPEN)
         self.assertFalse(self.breaker.can_execute())
 
+    def test_half_open_probe_release_allows_subsequent_probe(self) -> None:
+        # Trip to OPEN
+        for _ in range(3):
+            self.breaker.record_failure()
+
+        # Simulate timeout to HALF_OPEN
+        self.breaker._last_failure_timestamp -= 1.0
+        self.assertEqual(self.breaker.state, CircuitState.HALF_OPEN)
+
+        # First probe consumes slot
+        self.assertTrue(self.breaker.can_execute())
+        # Subsequent probe blocked
+        self.assertFalse(self.breaker.can_execute())
+
+        # Release probe slot (e.g. on non-tripping exception)
+        self.breaker.release_probe()
+        self.assertEqual(self.breaker.state, CircuitState.HALF_OPEN)
+        # Probe slot is available again
+        self.assertTrue(self.breaker.can_execute())
+
     def test_is_tripping_error(self) -> None:
         self.assertTrue(
             self.breaker.is_tripping_error(DummyRpcError(grpc.StatusCode.RESOURCE_EXHAUSTED))

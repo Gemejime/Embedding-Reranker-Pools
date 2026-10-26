@@ -117,6 +117,19 @@ class RerankerCircuitBreaker:
             self._consecutive_failures = 0
             self._half_open_probes = 0
 
+    def release_probe(self) -> None:
+        """Release a consumed half-open probe slot without altering circuit state."""
+        with self._lock:
+            if self._state == CircuitState.HALF_OPEN and self._half_open_probes > 0:
+                self._half_open_probes -= 1
+                logger.info(
+                    "Non-tripping error in HALF_OPEN state; probe slot released",
+                    extra={
+                        "status": "half_open_probe_released",
+                        "remaining_probes": self._half_open_probes,
+                    },
+                )
+
     def record_failure(self, error: Exception | None = None) -> None:
         """Record a failed invocation, potentially tripping the circuit to OPEN."""
         with self._lock:

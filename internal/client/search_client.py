@@ -199,6 +199,8 @@ class SearchOrchestratorClient:
                 latency_ms = (time.perf_counter() - t0_total) * 1000.0
                 if self._circuit_breaker.is_tripping_error(exc):
                     self._circuit_breaker.record_failure(exc)
+                else:
+                    self._circuit_breaker.release_probe()
 
                 status_desc = "queue_saturated_fallback"
                 reason_desc = f"call_failed_{type(exc).__name__}"
