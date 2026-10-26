@@ -308,16 +308,16 @@ sequenceDiagram
 ### Calibrated KEDA Metric Autoscaling Trigger Query
 Autoscaling evaluates the **average queue delay per request** rather than raw counter accumulation:
 
-$$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{triton\_queue\_duration\_microseconds}[\text{1m}]))}{\text{clamp\_min}(\sum(\text{rate}(\text{triton\_inference\_count}[\text{1m}])), 1)}$$
+$$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{nv\_inference\_queue\_duration\_us}[\text{1m}]))}{\text{clamp\_min}(\sum(\text{rate}(\text{nv\_inference\_count}[\text{1m}])), 1)}$$
 
 ```yaml
 triggers:
   - type: prometheus
     metadata:
       serverAddress: http://prometheus-k8s.monitoring.svc:9090
-      metricName: triton_queue_duration_microseconds
+      metricName: nv_inference_queue_duration_us
       threshold: "3000"
-      query: sum(rate(triton_queue_duration_microseconds{pool="online_embedding"}[1m])) / clamp_min(sum(rate(triton_inference_count{pool="online_embedding"}[1m])), 1)
+      query: sum(rate(nv_inference_queue_duration_us{pool="online_embedding"}[1m])) / clamp_min(sum(rate(nv_inference_count{pool="online_embedding"}[1m])), 1)
 ```
 
 ---
