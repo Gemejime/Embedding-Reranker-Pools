@@ -133,6 +133,10 @@
   - Refined benchmark harness tests (`test_multi_node_ingestion_scaling.py`, `test_online_latency_profiler.py`, `test_single_node_embedding_sweep.py`) to determine live mode strictly via `LIVE_TRITON=1`, calculate concurrent throughput wall-clock rates, and clearly delineate CI mock harness checks from physical GPU SLO assertions.
   - Verified 118 passing tests with 100% clean Ruff linting, formatting, and strict Mypy validation.
 
+- **Architecture Documentation Review Remediation Session**:
+  - Updated `Architecture.md` section 1 ("Native Queue Bounds & Fast Fallback") to clearly distinguish dynamic-batching wait (`max_queue_delay_microseconds`) from queue rejection controls (`default_queue_policy` with `timeout_action: REJECT`, `default_timeout_microseconds`, and `max_queue_size`), clarifying that rejection responses and un-reranked RRF fallbacks trigger when that rejection policy is configured.
+  - Updated `Architecture.md` section 6 ("Calibrated KEDA Metric Autoscaling Trigger Query") formula, `metricName`, and query to use the deployed `nv_inference_queue_duration_us` and `nv_inference_count` Prometheus metric names matching helm chart templates and unit test assertions.
+
 - **Code Review Remediation & Quality Hardening Session (Part 1)**:
   - Re-aligned pyproject.toml runtime dependencies: declared `grpcio>=1.84.0` matching `GRPC_GENERATED_VERSION` in compiled stubs, and aligned protobuf requirement floor (`protobuf>=7.35.1,<8.0.0`) with runtime checks in `triton_stubs_pb2.py`.
   - Updated `internal/client/batch_client.py` to raise fail-fast `RuntimeError` on empty `raw_output_contents` in SHM response, matching the gRPC transport path rather than returning placeholder zeros.
