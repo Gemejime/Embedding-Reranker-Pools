@@ -1,0 +1,53 @@
+"""Generated Triton KServe v2 gRPC stubs and message types."""
+
+from api.proto.v1.triton_stubs_pb2 import (
+    InferInputTensor,
+    InferOutputTensor,
+    InferParameter,
+    InferRequestedOutputTensor,
+    InferTensorContents,
+    ModelInferRequest,
+    ModelInferResponse,
+    ModelMetadataRequest,
+    ModelMetadataResponse,
+    ModelReadyRequest,
+    ModelReadyResponse,
+    ServerLiveRequest,
+    ServerLiveResponse,
+    ServerReadyRequest,
+    ServerReadyResponse,
+    SystemSharedMemoryRegisterRequest,
+    SystemSharedMemoryRegisterResponse,
+    SystemSharedMemoryUnregisterRequest,
+    SystemSharedMemoryUnregisterResponse,
+)
+from api.proto.v1.triton_stubs_pb2_grpc import (
+    GRPCInferenceServiceServicer,
+    GRPCInferenceServiceStub,
+    add_GRPCInferenceServiceServicer_to_server,
+)
+
+__all__ = [
+    "InferInputTensor",
+    "InferOutputTensor",
+    "InferParameter",
+    "InferRequestedOutputTensor",
+    "InferTensorContents",
+    "ModelInferRequest",
+    "ModelInferResponse",
+    "ModelMetadataRequest",
+    "ModelMetadataResponse",
+    "ModelReadyRequest",
+    "ModelReadyResponse",
+    "ServerLiveRequest",
+    "ServerLiveResponse",
+    "ServerReadyRequest",
+    "ServerReadyResponse",
+    "SystemSharedMemoryRegisterRequest",
+    "SystemSharedMemoryRegisterResponse",
+    "SystemSharedMemoryUnregisterRequest",
+    "SystemSharedMemoryUnregisterResponse",
+    "GRPCInferenceServiceStub",
+    "GRPCInferenceServiceServicer",
+    "add_GRPCInferenceServiceServicer_to_server",
+]

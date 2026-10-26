@@ -1,0 +1,63 @@
+# Declarative ArgoCD ApplicationSet managing all 3 compute pools.
+# NOTE: This ApplicationSet is the primary multi-pool delivery mechanism.
+# The standalone application manifests (application-online-embed.yaml,
+# application-online-rerank.yaml, application-batch-ingestion.yaml) are
+# alternative manifests for clusters without the ApplicationSet controller enabled.
+# Do not apply both simultaneously to avoid competing sources of truth.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: rag-inference-serving-pools
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: rag-inference-serving
+    app.kubernetes.io/part-of: enterprise-rag-platform
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - pool: online-embedding
+            name: rag-inference-online-embedding
+            valuesFile: values-online-embed.yaml
+            namespace: rag-inference-serving
+            nodeLifecycle: on-demand
+          - pool: online-reranker
+            name: rag-inference-online-reranker
+            valuesFile: values-online-rerank.yaml
+            namespace: rag-inference-serving
+            nodeLifecycle: on-demand
+          - pool: batch-ingestion
+            name: rag-inference-batch-ingestion
+            valuesFile: values-batch-ingestion.yaml
+            namespace: rag-inference-serving
+            nodeLifecycle: spot
+  template:
+    metadata:
+      name: "{{.name}}"
+      namespace: argocd
+      labels:
+        compute-pool: "{{.pool}}"
+        lifecycle: "{{.nodeLifecycle}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/enterprise-rag/rag-inference-serving.git
+        targetRevision: main
+        path: deployments/helm
+        helm:
+          valueFiles:
+            - values.yaml
+            - "{{.valuesFile}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{.namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ApplyOutOfSyncOnly=true

@@ -1,0 +1,191 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RAG Inference Serving Operational & Documentation API",
+    "description": "Internal HTTP Documentation, Health, and Operational API for rag-inference-serving (Triton / TensorRT runtime with Phase 4 Cluster Load Sweeps, Chaos Resilience, and KEDA Autoscaling)",
+    "version": "1.2.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Internal Operational Probe & Doc Server"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Liveness Probe",
+        "description": "Returns HTTP 200 if the operational probe server and Triton process monitor are running.",
+        "operationId": "getHealthz",
+        "responses": {
+          "200": {
+            "description": "Worker event loop is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Readiness Probe",
+        "description": "Verifies that TensorRT model engines are loaded in VRAM and queue latencies are within bounds.",
+        "operationId": "getReady",
+        "responses": {
+          "200": {
+            "description": "Worker model engines loaded and ready to accept inference requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessStatus"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Models initializing or VRAM allocation threshold breached (>85%)"
+          }
+        }
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "summary": "OpenAPI Documentation Schema",
+        "description": "Direct JSON output of the OpenAPI 3.1 specification for machine synchronization.",
+        "operationId": "getOpenApiSpec",
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 JSON specification",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus Metrics Scrape",
+        "description": "Exposes Triton queue duration, latency, and GPU VRAM saturation metrics in Prometheus exposition format.",
+        "operationId": "getMetrics",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          },
+          {}
+        ],
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition format",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing operational API token"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Optional bearer token authentication for operational metrics scraping."
+      },
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Optional API key header authentication for operational metrics scraping."
+      }
+    },
+    "schemas": {
+      "HealthStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "healthy"
+          },
+          "timestamp_utc": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-23T11:00:00Z"
+          }
+        },
+        "required": [
+          "status",
+          "timestamp_utc"
+        ]
+      },
+      "ReadinessStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ready"
+          },
+          "pool_type": {
+            "type": "string",
+            "enum": [
+              "online_embedding",
+              "online_reranker",
+              "batch_ingestion"
+            ],
+            "example": "online_embedding"
+          },
+          "vram_used_bytes": {
+            "type": "integer",
+            "example": 12884901888
+          },
+          "vram_capacity_bytes": {
+            "type": "integer",
+            "example": 25769803776
+          },
+          "vram_utilization_ratio": {
+            "type": "number",
+            "format": "float",
+            "example": 0.5
+          },
+          "models_ready": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "online_embedder_ensemble",
+              "dense_embedder_trt",
+              "text_tokenizer"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "pool_type",
+          "models_ready"
+        ]
+      }
+    }
+  }
+}

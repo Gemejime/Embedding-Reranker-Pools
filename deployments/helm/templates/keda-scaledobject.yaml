@@ -1,0 +1,20 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Release.Name }}-scaledobject
+  labels:
+    app.kubernetes.io/name: rag-inference-serving
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "rag-inference-serving.fullname" . | default .Release.Name }}
+  minReplicaCount: {{ .Values.autoscaling.minReplicaCount }}
+  maxReplicaCount: {{ .Values.autoscaling.maxReplicaCount }}
+  cooldownPeriod: {{ .Values.autoscaling.cooldownPeriod }}
+  pollingInterval: {{ .Values.autoscaling.pollingInterval }}
+  triggers:
+    {{- toYaml .Values.autoscaling.triggers | nindent 4 }}
+{{- end }}

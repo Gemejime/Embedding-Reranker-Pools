@@ -1,0 +1,59 @@
+# ==============================================================================
+# Dockerfile.triton - Hardware-Accelerated RAG Inference Serving
+# Base: NVIDIA Triton Inference Server 24.04-py3 (CUDA 12.4, TensorRT 10.x)
+# ==============================================================================
+
+FROM nvcr.io/nvidia/tritonserver:24.04-py3
+
+LABEL maintainer="Enterprise RAG Platform Engineering" \
+      service="rag-inference-serving" \
+      version="1.0.0"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/tritonserver/bin:${PATH}" \
+    PYTHONPATH="/app:${PYTHONPATH}"
+
+# Install minimal OS dependencies and Python libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install required operational server dependencies
+WORKDIR /app
+COPY pyproject.toml /app/
+
+RUN pip install --no-cache-dir \
+    "fastapi>=0.110.0" \
+    "uvicorn[standard]>=0.28.0" \
+    "pydantic>=2.6.0" \
+    "pydantic-settings>=2.2.0" \
+    "httpx>=0.27.0" \
+    "prometheus-client>=0.20.0"
+
+# Copy microservice application source code
+COPY internal/ /app/internal/
+COPY api/ /app/api/
+COPY scripts/ /app/scripts/
+COPY config/ /app/config/
+COPY deployments/docker/entrypoint.sh /app/entrypoint.sh
+
+# Create non-root directories and set permissions
+RUN chmod +x /app/entrypoint.sh && \
+    mkdir -p /models /tmp/triton /app/logs && \
+    chown -R 1000:1000 /app /models /tmp/triton
+
+# Switch to hardened non-root user (UID 1000)
+USER 1000
+
+# Expose KServe v2 ports and out-of-band Operational ASGI port
+# 8000: Triton HTTP Inference
+# 8001: Triton gRPC Inference (Primary upstream channel)
+# 8002: Triton Prometheus Metrics
+# 8080: ASGI Operational Server (/healthz, /ready, /metrics, /docs)
+EXPOSE 8000 8001 8002 8080
+
+ENTRYPOINT ["/app/entrypoint.sh"]

@@ -1,0 +1,96 @@
+# Reference specifications & internal tasks folder
+tasks/
+tasks/*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Type checking and linters
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# C++ & Build artifacts
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+
+# Model Weights and Large Engine Binaries (>100MB)
+*.plan
+*.engine
+*.onnx
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+model_cache/
+weights/
+
+# Triton & Shared Memory Runtime Artifacts
+*.dlog
+dump_tensor/
+/dev/shm/*
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Logs and runtime data
+*.log
+logs/
+run/

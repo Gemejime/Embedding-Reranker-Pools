@@ -1,0 +1,52 @@
+# Value overlay for Online Embedding Pool (Pool A)
+poolType: online_embedding
+
+replicaCount: 4
+
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    cpu: "8"
+    memory: "32Gi"
+  requests:
+    nvidia.com/gpu: 1
+    cpu: "4"
+    memory: "16Gi"
+
+nodeSelector:
+  node.kubernetes.io/instance-type: "g6.2xlarge"  # NVIDIA L4 / A10G dedicated on-demand
+  k8s.amazonaws.com/lifecycle: "on-demand"
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: compute-pool
+              operator: In
+              values:
+                - online-embedding
+
+autoscaling:
+  enabled: true
+  minReplicaCount: 4
+  maxReplicaCount: 8
+  cooldownPeriod: 60
+  pollingInterval: 5
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-k8s.monitoring.svc:9090
+        metricName: nv_inference_queue_duration_us
+        threshold: "3000"  # Scale trigger: average queue delay >= 3 ms (3000 us)
+        query: sum(rate(nv_inference_queue_duration_us{pool="online_embedding"}[1m])) / clamp_min(sum(rate(nv_inference_count{pool="online_embedding"}[1m])), 0.001)
+
+alerts:
+  warningQueueDelayMicroseconds: "4000"  # Warning alert at 4 ms for > 1 min
+  warningDuration: "1m"
+
+env:
+  RAG_SERVING_POOL_TYPE: "online_embedding"
+  RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS: "2000"
+  RAG_SERVING_MAX_BATCH_SIZE: "32"
+  MODEL_REPOSITORY: "/models/online_embedding_repository"
