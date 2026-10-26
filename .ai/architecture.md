@@ -78,7 +78,7 @@ Aligned with *Production Grade Backend Concepts*:
     - Eliminates Python GIL stalls, unhandled exceptions, and memory leaks.
 - **Backpressure & Throttling**:
   - Dynamic batching wait times are bounded by `max_queue_delay_microseconds` to limit micro-batch accumulation delay prior to execution without autonomously rejecting requests.
-  - Saturated queues enforce an explicit overload policy (`default_queue_policy` with `timeout_action: REJECT` and `max_queue_size`), returning `RESOURCE_EXHAUSTED` (gRPC status code 8 or HTTP 503 natively, translated to HTTP 429 when routed through API ingress gateways) under queue saturation to prevent cascading failure and trigger upstream RRF fallback.
+  - Saturated queues enforce an explicit overload policy (`default_queue_policy` with `timeout_action: REJECT` and `max_queue_size`), returning `UNAVAILABLE` (gRPC status 14, with "Request timeout expired") or HTTP 503 natively (translated to HTTP 429 or `RESOURCE_EXHAUSTED` only where a specific ingress gateway or proxy translation is configured) under queue saturation to prevent cascading failure and trigger upstream RRF fallback.
 - **Idempotency**:
   - Model inference operations are purely deterministic mathematical transformations; identical input payloads yield identical tensor representations.
 
@@ -122,7 +122,7 @@ Aligned with *Production Grade Backend Concepts*:
   - GPU VRAM Saturation: Critical when active runtime memory exceeds $85\%$ ($> 20.4\text{ GiB}$) on any node.
   - Ingestion Scale Threshold Alert: Warning when batch task backlog exceeds $500{,}000$ chunks while cluster pool is capped at maximum capacity (16 spot nodes).
 - **Graceful Error Handling & Fallback**:
-  - If cross-encoder queue is saturated, upstream `rag-search-orchestrator` catches `RESOURCE_EXHAUSTED` and falls back instantly to un-reranked RRF scores without breaking user search experience.
+  - If cross-encoder queue is saturated, upstream `rag-search-orchestrator` catches `UNAVAILABLE` (or translated `RESOURCE_EXHAUSTED`) and falls back instantly to un-reranked RRF scores without breaking user search experience.
 
 ---
 

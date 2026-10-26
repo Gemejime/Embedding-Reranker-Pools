@@ -81,9 +81,18 @@
 2. Check Kafka or task-queue lag driving the ingestion pipeline.
 3. Scale out the spot GPU node pool up to 16 nodes to meet target throughput ceilings.
 
----
-
 ## Session History & Change Log
+
+- **Untrusted Review Data Verification & Remediation Session**:
+  - Implemented `release_probe()` in `RerankerCircuitBreaker` (`internal/client/circuit_breaker.py`) and wired it into non-tripping exception paths in `SearchOrchestratorClient` (`internal/client/search_client.py`), ensuring consumed half-open probes are released without modifying circuit state or getting stuck.
+  - Removed unused `# type: ignore[import-untyped]` from `test/unit/test_argocd_configs.py`, `test/unit/test_helm_configs.py`, and `test/chaos/test_hardware_isolation.py`, resolving CI Mypy `unused-ignore` failures with `types-PyYAML`.
+  - Hardened GitOps ArgoCD manifests (`deployments/argocd/application-*.yaml` and `applicationset.yaml`) updating `targetRevision` from feature branch to `main`.
+  - Enabled `readOnlyRootFilesystem: true` and added writable `/tmp/triton` `emptyDir` mount in `deployments/argocd/rollout-canary.yaml`.
+  - Updated ArgoCD AnalysisTemplate `success-rate` metric Prometheus query (`deployments/argocd/analysistemplate.yaml`) to divide success rate by the sum of success and failure rates with denominator clamp.
+  - Aligned base Helm autoscaling triggers in `deployments/helm/values.yaml` to use standard Triton metrics `nv_inference_queue_duration_us` and `nv_inference_count`.
+  - Corrected TensorRT compilation CLI commands in `README.md` to use `--profile` (with valid `batch_ingestion` profile) and `--output-engine-path` matching `scripts/build_trt_engine.py`.
+  - Updated Triton queue saturation error contract documentation across `.ai/architecture.md`, `Architecture.md`, `README.md`, and `.ai/doc-api.md` to specify native `UNAVAILABLE` (gRPC status 14, "Request timeout expired") / HTTP 503 while mentioning `RESOURCE_EXHAUSTED` / HTTP 429 where translated by ingress.
+  - Verified 116 tests passing, clean Ruff linting/formatting, and 100% clean Mypy strict type checking.
 
 - **Code Review Hardening & Spec Alignment Session**:
   - Hardened gRPC client TLS credential setup (`internal/client/grpc_pool.py`) by letting CA, client key, and client certificate read errors propagate directly rather than catching and continuing with weaker credentials.

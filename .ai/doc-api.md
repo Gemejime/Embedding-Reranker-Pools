@@ -397,7 +397,7 @@ ensemble_scheduling {
 - **Dynamic Batching**: `max_queue_delay_microseconds: 4000` (4 ms)
 - **Target Workload**: Top-10 to top-30 candidate pairs
 - **SLO Target**: P99 $\le 30\text{ ms}$ under sustained load.
-- **Queue Saturation Fallback**: Saturated queues enforce `default_queue_policy` with `timeout_action: REJECT`, returning `RESOURCE_EXHAUSTED` to trigger immediate orchestrator bypass to un-reranked RRF scores.
+- **Queue Saturation Fallback**: Saturated queues enforce `default_queue_policy` with `timeout_action: REJECT`, returning `UNAVAILABLE` (gRPC status 14, with "Request timeout expired") or HTTP 503 natively (or `RESOURCE_EXHAUSTED` if translated by specific ingress gateways) to trigger immediate orchestrator bypass to un-reranked RRF scores.
 
 ```protobuf
 name: "cross_encoder_trt"
@@ -572,10 +572,10 @@ For high-density batch ingestion, `rag-chunk-lifecycle-service` and ingestion wo
 | Status Code | Reason | Upstream Orchestrator Action |
 | :--- | :--- | :--- |
 | `OK` (0) | Inference succeeded | Consume embeddings or cross-encoder logits |
-| `RESOURCE_EXHAUSTED` (8) | Dynamic batch queue saturated beyond timeout | **Immediate fallback**: Bypass cross-encoder reranker and return un-reranked Reciprocal Rank Fusion (RRF) scores directly |
+| `UNAVAILABLE` (14) / `RESOURCE_EXHAUSTED` (8) | Dynamic batch queue saturated beyond timeout ("Request timeout expired" on UNAVAILABLE natively; RESOURCE_EXHAUSTED if translated) | **Immediate fallback**: Bypass cross-encoder reranker and return un-reranked Reciprocal Rank Fusion (RRF) scores directly |
 | `DEADLINE_EXCEEDED` (4) | Request exceeded client timeout budget | Abort request; log warning; fall back to un-reranked RRF scores |
 | `INVALID_ARGUMENT` (3) | Token length exceeds maximum context window | Deterministically truncate at C++ kernel boundary |
-| `UNAVAILABLE` (14) | Triton pod restarting or spot eviction | Route request to healthy AZ replica or retry with backoff |
+| `UNAVAILABLE` (14) | Triton pod restarting, spot eviction, or queue timeout | Route request to healthy AZ replica or fall back to RRF |
 
 ---
 
@@ -673,7 +673,7 @@ The `RerankerCircuitBreaker` protects online query latency budgets against Trito
       OPEN --> OPEN : Instant un-reranked RRF fallback (bypasses gRPC)
   ```
 - **Tripping Triggers**:
-  - `RESOURCE_EXHAUSTED` (Triton queue rejection according to reranker queue policy: 64-request queue limit or 10 ms queue timeout with REJECT action; distinct from the 4 ms dynamic batching window)
+  - `UNAVAILABLE` / `RESOURCE_EXHAUSTED` (Triton queue rejection returning gRPC status 14 "Request timeout expired" natively according to reranker queue policy: 64-request queue limit or 10 ms queue timeout with REJECT action; also trips on `RESOURCE_EXHAUSTED` where translated)
   - `DEADLINE_EXCEEDED` (Client-side 35 ms latency budget breach)
   - `UNAVAILABLE` (Pod restarts or spot node evictions)
 - **Deterministic Un-Reranked RRF Fallback**:
@@ -728,7 +728,7 @@ The benchmark harness validates all calibrated SLIs/SLOs across isolated GPU tie
 ### B. Chaos & Resilience Testing Protocols (`test/chaos/`)
 
 1. **Queue Saturation & Native Backpressure (`test/chaos/test_queue_saturation_backpressure.py`)**:
-   - Saturates dynamic batching queues beyond capacity, confirming Triton returns `RESOURCE_EXHAUSTED` (gRPC status 8).
+   - Saturates dynamic batching queues beyond capacity, confirming Triton returns `UNAVAILABLE` (gRPC status 14, "Request timeout expired") or `RESOURCE_EXHAUSTED` (gRPC status 8).
    - Verifies client circuit breaker trips to `OPEN`, immediately returning deterministic un-reranked RRF scores ($RRF(d) = 1.0 / (60.0 + rank(d))$) without cascading failures.
    - Validates complete 3-state transition: `CLOSED` $\rightarrow$ `OPEN` $\rightarrow$ `HALF_OPEN` $\rightarrow$ `CLOSED`.
    - Confirms secured logging under failure conditions: zero query or passage payloads emitted to error logs.

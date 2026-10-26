@@ -13,7 +13,7 @@ The `rag-inference-serving` subsystem provides horizontally scalable, hardware-a
 2. **Hardware-Isolated Serving**: Separate compute-intensive cross-encoder rerankers from dense query embedders across discrete GPU node pools to prevent dense $O(N)$ matrix multiplications from breaching online retrieval latency SLOs.
 3. **Direct-to-Runtime Transport**: Connect upstream orchestrators directly to NVIDIA Triton Inference Server via low-latency gRPC channels with HTTP/2 keepalive pooling, and provide zero-copy POSIX shared memory (`/dev/shm`) IPC mounts for co-located ingestion pipelines—completely eliminating intermediate data-plane sidecar proxies (ADR-005).
 4. **In-Engine C++ Tokenization & Triton Ensembles**: Execute tokenization directly inside the Triton inference engine via C++ tokenizer runtimes chained to TensorRT FP16 engines using Triton Ensemble Pipelines, eliminating Python Global Interpreter Lock (GIL) bottlenecks.
-5. **Native Queue Bounds & Fast Fallback**: Enforce Triton-native dynamic batch queue timeouts (`max_queue_delay_microseconds`). When queues saturate, emit standard error status codes (`RESOURCE_EXHAUSTED` / HTTP 429) to trigger immediate, deterministic un-reranked Reciprocal Rank Fusion (RRF) fallback in upstream orchestrators.
+5. **Native Queue Bounds & Fast Fallback**: Enforce Triton-native dynamic batch queue timeouts (`max_queue_delay_microseconds`). When queues saturate, Triton returns `UNAVAILABLE` (gRPC status 14, "Request timeout expired") or HTTP 503 (translated to HTTP 429 or `RESOURCE_EXHAUSTED` where ingress layers configure translation) to trigger immediate, deterministic un-reranked Reciprocal Rank Fusion (RRF) fallback in upstream orchestrators.
 6. **Standardized FP16 Precision**: Standardize purely on FP16 TensorRT engine serialization (`model.plan`) in initial phases, avoiding score degradation on embedding vector spaces and quantization maintenance overhead.
 
 ---
@@ -39,7 +39,7 @@ graph TD
     SearchOrch -->|"Direct gRPC HTTP/2 (35ms deadline)"| PoolB
     LifecycleSvc -->|"Local: Pod /dev/shm (8 GiB emptyDir)<br/>Remote: Batched gRPC HTTP/2"| PoolC
 
-    PoolB -.->|"Saturated? (RESOURCE_EXHAUSTED)"| RRFFallback["Instant Fallback to Un-Reranked RRF<br/>1.0 / (60.0 + rank)"]
+    PoolB -.->|"Saturated? (UNAVAILABLE / 503)"| RRFFallback["Instant Fallback to Un-Reranked RRF<br/>1.0 / (60.0 + rank)"]
 ```
 
 ### Calibrated Quantitative SLOs & Operational Invariants
@@ -118,7 +118,7 @@ The microservice architecture maps strictly to the **5 Production Grade Backend 
    - In-engine C++ kernel bound gates deterministically truncate inputs exceeding maximum context limits (512 tokens for embeddings, 2048 tokens for cross-encoders) without raising exceptions or causing memory fragmentation.
 4. **Native Backpressure & Throttling**:
    - Configured via Triton dynamic batching `default_queue_policy` with `timeout_action: REJECT` and `max_queue_size`.
-   - Saturated queues return standard error status `RESOURCE_EXHAUSTED` (gRPC status 8) or HTTP 429 rather than queueing indefinitely, enabling upstream callers to instantly fall back.
+   - Saturated queues return standard error status `UNAVAILABLE` (gRPC status 14, "Request timeout expired") or HTTP 503 rather than queueing indefinitely (translated to HTTP 429 or `RESOURCE_EXHAUSTED` where ingress layers configure translation), enabling upstream callers to instantly fall back.
 5. **Idempotency**:
    - All inference endpoints are purely functional mathematical projections; identical string inputs produce deterministic tensor outputs.
 
@@ -258,8 +258,8 @@ sequenceDiagram
         Orch->>PoolB: gRPC Infer(online_reranker_ensemble, query, passages)
         PoolB-->>Orch: Cross-Encoder Logits [30] (P99 <= 30ms)
         Orch->>User: Top-K Reranked Documents (Cumulative <= 40ms)
-    else Pool B Saturated (RESOURCE_EXHAUSTED or Timeout)
-        PoolB-->>Orch: gRPC Error: RESOURCE_EXHAUSTED
+    else Pool B Saturated (UNAVAILABLE or Timeout)
+        PoolB-->>Orch: gRPC Error: UNAVAILABLE ("Request timeout expired")
         Note over Orch: Circuit Breaker Trips -> Fallback
         Orch->>Orch: Compute Deterministic RRF Scores: 1.0 / (60 + rank)
         Orch->>User: Top-K Fallback RRF Documents (No Latency Spike)

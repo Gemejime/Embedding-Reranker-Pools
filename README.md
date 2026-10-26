@@ -25,7 +25,7 @@ graph TD
     SearchOrch -->|"Direct gRPC HTTP/2 (35ms deadline)"| PoolB
     LifecycleSvc -->|"Local: Pod /dev/shm (8 GiB emptyDir)<br/>Remote: Batched gRPC HTTP/2"| PoolC
 
-    PoolB -.->|"Saturated? (RESOURCE_EXHAUSTED)"| RRFFallback["Instant Fallback to Un-Reranked RRF<br/>1.0 / (60.0 + rank)"]
+    PoolB -.->|"Saturated? (UNAVAILABLE / 503)"| RRFFallback["Instant Fallback to Un-Reranked RRF<br/>1.0 / (60.0 + rank)"]
 ```
 
 ### Decoupled Pool Hardware & SLO Matrix
@@ -109,7 +109,7 @@ Tokenization executes directly inside the Triton inference engine via C++ tokeni
 
 - **KServe v2 Binary Tensor Codec (`internal/client/kserve_codec.py`)**: Pack/unpack string tensors using 4-byte little-endian length prefixes and FP16 byte buffers using NumPy zero-copy memoryviews.
 - **gRPC Connection Pooling (`internal/client/grpc_pool.py`)**: Thread-safe channel pools maintaining dedicated HTTP/2 keepalive connections per pool type (`keepalive_time_ms=10000`, `keepalive_timeout_ms=5000`).
-- **Resilient Circuit Breaker (`internal/client/circuit_breaker.py`)**: 3-state machine (`CLOSED`, `OPEN`, `HALF_OPEN`) tripping on Triton queue saturation (`RESOURCE_EXHAUSTED`), timeouts (`DEADLINE_EXCEEDED`), or pod restarts (`UNAVAILABLE`).
+- **Resilient Circuit Breaker (`internal/client/circuit_breaker.py`)**: 3-state machine (`CLOSED`, `OPEN`, `HALF_OPEN`) tripping on Triton queue saturation (`UNAVAILABLE` / `RESOURCE_EXHAUSTED`), timeouts (`DEADLINE_EXCEEDED`), or pod restarts (`UNAVAILABLE`).
 - **Un-Reranked RRF Fallback**: When the circuit breaker trips, it instantly emits deterministic Reciprocal Rank Fusion (RRF) scores without degrading retrieval latency:
   $$RRF(d) = \frac{1.0}{60.0 + rank(d)}$$
 - **Secured Structured Logging (`internal/logging/secured_logger.py`)**: Structured JSON logging strictly redacting raw query text, chunk payloads, and raw tensor floats.
@@ -197,9 +197,9 @@ python scripts/export_tokenizer.py --model-type reranker --output-dir config/tri
 ### Compile TensorRT FP16 Engines
 ```bash
 # Compile with dry-run fallback or on live GPU with trtexec
-python scripts/build_trt_engine.py --model-type online_embed --onnx-path models/dense_embedder.onnx --output-plan config/triton/online_embedding_repository/dense_embedder_trt/1/model.plan
-python scripts/build_trt_engine.py --model-type online_rerank --onnx-path models/cross_encoder.onnx --output-plan config/triton/online_reranker_repository/cross_encoder_trt/1/model.plan
-python scripts/build_trt_engine.py --model-type batch_ingest --onnx-path models/dense_embedder.onnx --output-plan config/triton/batch_ingestion_repository/batch_embedder_trt/1/model.plan
+python scripts/build_trt_engine.py --profile online_embed --onnx-path models/dense_embedder.onnx --output-engine-path config/triton/online_embedding_repository/dense_embedder_trt/1/model.plan
+python scripts/build_trt_engine.py --profile online_rerank --onnx-path models/cross_encoder.onnx --output-engine-path config/triton/online_reranker_repository/cross_encoder_trt/1/model.plan
+python scripts/build_trt_engine.py --profile batch_ingestion --onnx-path models/dense_embedder.onnx --output-engine-path config/triton/batch_ingestion_repository/batch_embedder_trt/1/model.plan
 ```
 
 ---
@@ -250,7 +250,7 @@ make test-chaos
 - `test_online_latency_profiler.py`: 100-request warm-up sweep, verifying 1,500 QPS Pool A P99 $\le 10\text{ ms}$, Pool B P99 $\le 30\text{ ms}$, and cumulative $\le 40\text{ ms}$ search budget.
 
 ### Chaos & Resilience Suite (`test/chaos/`)
-- `test_queue_saturation_backpressure.py`: Saturates Triton dynamic batch queues, asserts `RESOURCE_EXHAUSTED` (gRPC status 8), verifies 3-state circuit breaker tripping and un-reranked RRF scores.
+- `test_queue_saturation_backpressure.py`: Saturates Triton dynamic batch queues, asserts `UNAVAILABLE` (gRPC status 14) / `RESOURCE_EXHAUSTED` (gRPC status 8), verifies 3-state circuit breaker tripping and un-reranked RRF scores.
 - `test_cuda_stall_injection.py`: Injects synthetic kernel delays exceeding deadlines (15 ms / 35 ms) and verifies rapid channel recycling.
 - `test_hardware_isolation.py`: Floods batch ingestion pipeline while concurrently serving 1,500 QPS online queries, validating zero latency degradation and Kubernetes scheduling isolation.
 - `test_spot_eviction.py`: Simulates Kubernetes spot instance termination signals (`SIGTERM`), verifying connection failover, task re-queueing without chunk loss, and clean `/dev/shm` resource reclamation.
