@@ -791,11 +791,11 @@ The microservice reads configuration parameters via Pydantic `ServingSettings` w
 | `RAG_SERVING_POOL_TYPE` | `string` | `online_embedding` | Hardware compute pool identity: `online_embedding`, `online_reranker`, `batch_ingestion`. |
 | `RAG_SERVING_SERVER_HOST` | `string` | `0.0.0.0` | Bind host interface for out-of-band operational ASGI server. |
 | `RAG_SERVING_SERVER_PORT` | `integer` | `8080` | HTTP port for operational server hosting `/healthz`, `/ready`, `/metrics`, `/docs`, `/redoc`, `/api/docs`, `/openapi.json`. |
-| `RAG_SERVING_TRITON_HTTP_URL` | `string` | `http://localhost:8000` | Internal Triton HTTP endpoint for KServe v2 health and readiness checks. |
-| `RAG_SERVING_TRITON_GRPC_URL` | `string` | `localhost:8001` | Internal Triton gRPC endpoint for KServe v2 binary tensor inference. |
-| `RAG_SERVING_ONLINE_EMBED_GRPC_URL` | `string` | `localhost:8001` | Upstream channel target for Online Embedding Pool (Pool A: NVIDIA L4/A10G On-Demand). |
-| `RAG_SERVING_ONLINE_RERANK_GRPC_URL` | `string` | `localhost:8001` | Upstream channel target for Online Reranker Pool (Pool B: NVIDIA L4/A10G On-Demand). |
-| `RAG_SERVING_BATCH_INGEST_GRPC_URL` | `string` | `localhost:8001` | Upstream channel target for Batch Ingestion Pool (Preemptible Spot Nodes). |
+| `RAG_SERVING_TRITON_HTTP_URL` | `string` | `http://127.0.0.1:8000` | Internal pod-local Triton HTTP endpoint for KServe v2 health and readiness probes. |
+| `RAG_SERVING_TRITON_GRPC_URL` | `string` | `127.0.0.1:8001` | Internal pod-local Triton gRPC endpoint for KServe v2 binary tensor inference. |
+| `RAG_SERVING_ONLINE_EMBED_GRPC_URL` | `string` | `dns:///rag-inference-online-embedding.rag-inference-serving.svc.cluster.local:8001` | Upstream channel target for Online Embedding Pool (Pool A: NVIDIA L4/A10G On-Demand) with client-side round-robin load balancing. |
+| `RAG_SERVING_ONLINE_RERANK_GRPC_URL` | `string` | `dns:///rag-inference-online-reranker.rag-inference-serving.svc.cluster.local:8001` | Upstream channel target for Online Reranker Pool (Pool B: NVIDIA L4/A10G On-Demand) with client-side round-robin load balancing. |
+| `RAG_SERVING_BATCH_INGEST_GRPC_URL` | `string` | `dns:///rag-inference-batch-ingestion.rag-inference-serving.svc.cluster.local:8001` | Upstream channel target for Batch Ingestion Pool (Preemptible Spot Nodes) with client-side round-robin load balancing. |
 | `RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS` | `integer` | Pool-calibrated | Triton queue delay timeout in $\mu s$ (`2000` for online embedding, `4000` for online reranker, `50000` for batch ingestion). |
 | `RAG_SERVING_MAX_BATCH_SIZE` | `integer` | Pool-calibrated | Dynamic batch size ceiling (`32` for online embedding/reranker, `256` for batch ingestion). |
 | `RAG_SERVING_VRAM_CAPACITY_BYTES` | `integer` | `25769803776` | Total GPU VRAM capacity in bytes (24 GiB NVIDIA L4/A10G memory layout). |

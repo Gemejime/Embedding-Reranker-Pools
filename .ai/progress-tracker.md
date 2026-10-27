@@ -145,6 +145,13 @@
   - Updated `.ai/doc-api.md` queue rejection tripping triggers to accurately reflect the 64-request queue limit and 10 ms timeout policy rather than conflating it with the 4 ms dynamic batching window.
   - Added unit test coverage across all modified components with 100% clean test passes, Ruff lint/format conformance, and strict Mypy validation.
 
+- **Production Compute Pool & gRPC Resolver Session**:
+  - Upgraded pod-local Triton KServe v2 health probe URL (`RAG_SERVING_TRITON_HTTP_URL`) and inference endpoint (`RAG_SERVING_TRITON_GRPC_URL`) to explicit loopback addresses (`http://127.0.0.1:8000` and `127.0.0.1:8001`) in `.env`, `.env.prod`, and `.env.example`.
+  - Configured decoupled compute pool endpoints using Kubernetes DNS resolver targets (`dns:///`) for Online Embedding, Online Reranker, and Batch Ingestion pools.
+  - Enhanced `internal/client/grpc_pool.py` to automatically activate gRPC client-side `round_robin` load balancing policy on `dns:` resolver targets across headless Kubernetes pod replicas.
+  - Added unit test `test_dns_target_round_robin_resolution` in `test/unit/test_grpc_pool.py` verifying `round_robin` LB option propagation.
+  - Synchronized environment documentation in `.ai/doc-api.md`.
+
 - **Environment Configuration Template & Validation Session**:
 
   - Authored comprehensive environment configuration template (`.env.example`) defining all operational parameters across 10 structured sections: Service Identity & Topology (`RAG_SERVING_POOL_TYPE`), Out-of-band ASGI Server (`RAG_SERVING_SERVER_HOST`, `RAG_SERVING_SERVER_PORT`), Triton KServe v2 URLs, Decoupled Pool gRPC Targets, Calibrated Dynamic Batching Ceilings (`RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS`, `RAG_SERVING_MAX_BATCH_SIZE`), VRAM Headroom Guards (`RAG_SERVING_VRAM_CAPACITY_BYTES`, `RAG_SERVING_MAX_STATIC_VRAM_BYTES`, `RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO`), Expected Model Engines (`RAG_SERVING_MODELS_EXPECTED`), POSIX SHM Mounts (`RAG_SERVING_SHM_BASE_PATH`), Triton Container Supervisor (`MODEL_REPOSITORY`, `TRITON_ARGS`), and Benchmark Test Orchestration (`LIVE_TRITON`, `TRITON_ONLINE_GRPC_TARGET`, `TRITON_BATCH_GRPC_TARGET`, `TRITON_CLUSTER_ENDPOINTS`).
