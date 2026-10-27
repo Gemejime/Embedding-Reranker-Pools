@@ -134,6 +134,27 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
         self.assertIn(("grpc.lb_policy_name", "round_robin"), options)
         pool.close()
 
+    @patch("grpc.insecure_channel")
+    def test_dns_target_round_robin_resolution(self, mock_channel_fn: MagicMock) -> None:
+        mock_channel = MagicMock()
+        mock_channel_fn.return_value = mock_channel
+
+        pool = TritonGRPCChannelPool(
+            embedding_target="dns:///rag-inference-online-embedding.rag-inference-serving.svc.cluster.local:8001"
+        )
+        target = pool.get_target(PoolType.ONLINE_EMBEDDING)
+        self.assertEqual(
+            target,
+            "dns:///rag-inference-online-embedding.rag-inference-serving.svc.cluster.local:8001",
+        )
+
+        chan = pool.get_channel(PoolType.ONLINE_EMBEDDING)
+        self.assertEqual(chan, mock_channel)
+        call_kwargs = mock_channel_fn.call_args[1]
+        options = call_kwargs["options"]
+        self.assertIn(("grpc.lb_policy_name", "round_robin"), options)
+        pool.close()
+
     def test_unprefixed_hostname_multi_target_raises_value_error(self) -> None:
         with self.assertRaises(ValueError) as ctx:
             TritonGRPCChannelPool(batch_target=["worker-1.local:8001", "worker-2.local:8001"])

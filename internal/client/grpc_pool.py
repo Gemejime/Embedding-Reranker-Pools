@@ -113,8 +113,10 @@ class TritonGRPCChannelPool:
             if channel is None:
                 target = self.get_target(pool_type)
                 options = list(self._options)
-                # Enable round-robin LB for multi-instance endpoints
-                if "," in target and not any(k == "grpc.lb_policy_name" for k, _ in options):
+                # Enable round-robin LB for multi-instance or dns resolver endpoints
+                if ("," in target or target.startswith("dns:")) and not any(
+                    k == "grpc.lb_policy_name" for k, _ in options
+                ):
                     options.append(("grpc.lb_policy_name", "round_robin"))
 
                 logger.info(
