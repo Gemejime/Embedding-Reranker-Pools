@@ -160,6 +160,14 @@
   - Updated `README.md` local environment setup with `.env` copy instructions.
   - Verified 100% test pass rate across test suite and confirmed ruff lint/formatting compliance.
 
+- **CI/CD Secret Injection & Automated Deployment Session**:
+
+  - Configured GitHub Actions deployment workflow (`.github/workflows/deploy.yml`) with automated Kubernetes secret injection (`rag-inference-secrets`) and Helm upgrade/rollout verification.
+  - Implemented `secretRef` binding under `envFrom` in `deployments/helm/templates/deployment.yaml` conditioned on `.Values.env.secretName`.
+  - Added CI environment drift audit step in `.github/workflows/ci.yml` enforcing zero-drift validation on PRs and pushes.
+  - Authored comprehensive secret management guide (`deployments/SECRET_MANAGEMENT.md`) documenting GitHub Secrets inventory and injection pipelines.
+  - Added unit test `test_deployment_template_annotations_and_secret_ref` in `test/unit/test_helm_configs.py` validating Helm template conditional `secretRef` rendering.
+
 - **Environment Synchronization & Deployment Enforcement Session**:
 
   - Implemented dynamic ConfigMap ingestion (`deployments/helm/templates/configmap.yaml`) dynamically iterating over `.Values.env`, preserving `PORT` (8080) and `GRPC_PORT` (50051) fallbacks while ignoring `secretName` and nil values.

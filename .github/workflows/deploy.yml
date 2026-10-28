@@ -1,0 +1,88 @@
+name: Deploy - RAG Inference Serving
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - rag-inference-serving
+    paths:
+      - "deployments/**"
+      - "internal/**"
+      - "api/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - ".env.prod"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target deployment environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - staging
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-to-kubernetes:
+    name: Kubernetes Deploy & CI/CD Secret Injection
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.15.0"
+
+      - name: Set up Kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.30.0"
+
+      - name: Configure Kubernetes Context
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Ensure Kubernetes Namespace Exists
+        run: |
+          kubectl create namespace rag-inference-serving --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: "Inject Microservice Secrets (CI/CD Secret Injection)"
+        run: |
+          echo "Injecting runtime secrets for rag-inference-serving..."
+          kubectl create secret generic rag-inference-secrets \
+            --namespace rag-inference-serving \
+            --from-literal=HF_TOKEN="${{ secrets.PROD_HF_TOKEN }}" \
+            --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.PROD_AWS_ACCESS_KEY_ID }}" \
+            --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}" \
+            --from-literal=RAG_SERVING_API_KEY="${{ secrets.PROD_RAG_SERVING_API_KEY }}" \
+            --from-literal=KAFKA_SASL_PASSWORD="${{ secrets.PROD_KAFKA_SASL_PASSWORD }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy Helm Chart
+        run: |
+          echo "Deploying rag-inference-serving via Helm..."
+          helm upgrade --install rag-inference-serving deployments/helm \
+            --namespace rag-inference-serving \
+            --values deployments/helm/values.yaml \
+            --set env.secretName=rag-inference-secrets
+
+      - name: Verify Deployment Rollout
+        run: |
+          echo "Verifying rollout status..."
+          kubectl rollout status deployment/rag-inference-serving \
+            --namespace rag-inference-serving \
+            --timeout=300s
