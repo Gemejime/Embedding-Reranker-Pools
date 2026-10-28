@@ -73,6 +73,14 @@ class TestHelmConfigs(unittest.TestCase):
         self.assertIn("spotInstance", tolerations)
         self.assertEqual(data["alerts"]["warningBacklogChunks"], "500000")
 
+    def test_deployment_template_annotations_and_secret_ref(self) -> None:
+        deployment_path = os.path.join(self.helm_dir, "templates", "deployment.yaml")
+        with open(deployment_path, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("checksum/config", content)
+        self.assertIn(".Values.env.secretName", content)
+        self.assertIn("secretRef:", content)
+
 
 if __name__ == "__main__":
     unittest.main()
