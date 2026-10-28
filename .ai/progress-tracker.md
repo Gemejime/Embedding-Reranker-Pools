@@ -160,6 +160,15 @@
   - Updated `README.md` local environment setup with `.env` copy instructions.
   - Verified 100% test pass rate across test suite and confirmed ruff lint/formatting compliance.
 
+- **Environment Synchronization & Deployment Enforcement Session**:
+
+  - Implemented dynamic ConfigMap ingestion (`deployments/helm/templates/configmap.yaml`) dynamically iterating over `.Values.env`, preserving `PORT` (8080) and `GRPC_PORT` (50051) fallbacks while ignoring `secretName` and nil values.
+  - Added `checksum/config` sha256 annotation to `deployments/helm/templates/deployment.yaml` under `spec.template.metadata.annotations` to guarantee automated rolling pod restarts upon ConfigMap modification.
+  - Developed synchronization and drift validation script (`scripts/sync_env_to_deployments.py`) supporting `--sync` and `--check-only`, preserving `values.yaml` top-level blocks and `secretName`, and excluding sensitive credentials (`PASSWORD`, `SECRET`, `TOKEN`, `KEY`).
+  - Added Git pre-commit hook (`.git/hooks/pre-commit`) enforcing zero configuration drift prior to commit.
+  - Updated developer documentation header in `.env.example` documenting that `.env.prod` is the sole source of truth for deployment manifests.
+  - Added unit test suite in `test/unit/test_sync_env.py` validating environment parsing, secret scrubbing, drift detection, and zero-drift verification.
+
 - **Phase 4 Cluster Load Sweeps, Chaos & Autoscaling Session**:
 
   - Implemented comprehensive benchmark suite (`test/benchmark/test_single_node_embedding_sweep.py`, `test/benchmark/test_multi_node_ingestion_scaling.py`, `test/benchmark/test_online_latency_profiler.py`) validating single-node throughput (2,500–3,500 chunks/sec), multi-node cluster scaling (&ge; 40,000 chunks/sec across 12–16 spot nodes), and online P99 retrieval bounds (&le; 10 ms embedding, &le; 30 ms reranking, &le; 40 ms cumulative).
