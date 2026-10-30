@@ -15,6 +15,7 @@ resources:
     memory: 16Gi
 service:
   type: ClusterIP
+  clusterIP: None
   grpcPort: 8001
   httpPort: 8000
   metricsPort: 8002
@@ -64,6 +65,7 @@ env:
   RAG_SERVING_GRPC_TLS_ENABLED: 'false'
   RAG_SERVING_GRPC_CA_CERT_PATH: ''
   RAG_SERVING_GRPC_CLIENT_CERT_PATH: ''
+  RAG_SERVING_GRPC_CLIENT_KEY_PATH: ''
   RAG_SERVING_GRPC_SERVER_NAME_OVERRIDE: ''
   RAG_SERVING_LOG_LEVEL: INFO
   PROMETHEUS_SERVER_ADDRESS: http://prometheus-k8s.monitoring.svc:9090
@@ -77,6 +79,6 @@ env:
   AWS_ENDPOINT_URL: ''
   MODEL_REGISTRY_STORAGE_URI: s3://rag-model-cache/tensorrt-engines/
   MODEL_REPOSITORY: /models
-  TRITON_ARGS: --model-repository=/models --strict-model-config=true --log-verbose=0
+  TRITON_ARGS: --strict-model-config=true --log-verbose=0
   LIVE_TRITON: '0'
-  secretName: ''
+  secretName: rag-inference-secrets

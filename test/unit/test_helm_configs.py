@@ -26,6 +26,7 @@ class TestHelmConfigs(unittest.TestCase):
         self.assertTrue(data["modelStorage"]["readOnly"])
         self.assertEqual(data["service"]["operationalPort"], 8080)
         self.assertEqual(data["service"]["grpcPort"], 8001)
+        self.assertEqual(str(data["service"]["clusterIP"]), "None")
         trigger = data["autoscaling"]["triggers"][0]
         self.assertEqual(trigger["metadata"]["metricName"], "nv_inference_queue_duration_us")
         self.assertIn("nv_inference_queue_duration_us", trigger["metadata"]["query"])
@@ -78,6 +79,7 @@ class TestHelmConfigs(unittest.TestCase):
         with open(deployment_path, encoding="utf-8") as f:
             content = f.read()
         self.assertIn("checksum/config", content)
+        self.assertIn("checksum/secret", content)
         self.assertIn(".Values.env.secretName", content)
         self.assertIn("secretRef:", content)
 
