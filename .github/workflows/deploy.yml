@@ -11,7 +11,6 @@ on:
       - "api/**"
       - "scripts/**"
       - "pyproject.toml"
-      - ".env.prod"
   workflow_dispatch:
     inputs:
       environment:
@@ -64,23 +63,31 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
           RAG_SERVING_API_KEY: ${{ secrets.PROD_RAG_SERVING_API_KEY }}
+          KAFKA_SASL_USERNAME: ${{ secrets.PROD_KAFKA_SASL_USERNAME }}
           KAFKA_SASL_PASSWORD: ${{ secrets.PROD_KAFKA_SASL_PASSWORD }}
         run: |
           echo "Injecting runtime secrets for rag-inference-serving..."
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: rag-inference-secrets
-            namespace: rag-inference-serving
-          type: Opaque
-          stringData:
-            HF_TOKEN: "${HF_TOKEN}"
-            AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
-            AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
-            RAG_SERVING_API_KEY: "${RAG_SERVING_API_KEY}"
-            KAFKA_SASL_PASSWORD: "${KAFKA_SASL_PASSWORD}"
-          EOF
+          python3 -c '
+          import json, os, sys
+          secret = {
+              "apiVersion": "v1",
+              "kind": "Secret",
+              "metadata": {
+                  "name": "rag-inference-secrets",
+                  "namespace": "rag-inference-serving",
+              },
+              "type": "Opaque",
+              "stringData": {
+                  "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
+                  "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID", ""),
+                  "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+                  "RAG_SERVING_API_KEY": os.environ.get("RAG_SERVING_API_KEY", ""),
+                  "KAFKA_SASL_USERNAME": os.environ.get("KAFKA_SASL_USERNAME", ""),
+                  "KAFKA_SASL_PASSWORD": os.environ.get("KAFKA_SASL_PASSWORD", ""),
+              },
+          }
+          json.dump(secret, sys.stdout)
+          ' | kubectl apply -f -
 
       - name: Deploy Helm Chart
         run: |

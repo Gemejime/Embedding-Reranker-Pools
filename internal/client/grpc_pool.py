@@ -203,57 +203,66 @@ class TritonGRPCChannelPool:
         with self._lock:
             return self._stubs[pool_type]
 
+    def _ensure_loopback_resources_locked(self) -> tuple[grpc.Channel, GRPCInferenceServiceStub]:
+        """Ensure both loopback channel and stub are created atomically under self._lock."""
+        if self._loopback_channel is None:
+            target = self._loopback_target
+            options = list(self._options)
+            logger.info(
+                "Initializing loopback gRPC channel for pod-local operations",
+                extra={"target": target, "status": "loopback_channel_created"},
+            )
+            if self._settings.grpc_tls_enabled:
+                root_certs: bytes | None = None
+                if self._settings.grpc_ca_cert_path:
+                    with open(self._settings.grpc_ca_cert_path, "rb") as f:
+                        root_certs = f.read()
+                private_key: bytes | None = None
+                cert_chain: bytes | None = None
+                if self._settings.grpc_client_key_path and self._settings.grpc_client_cert_path:
+                    with open(self._settings.grpc_client_key_path, "rb") as f:
+                        private_key = f.read()
+                    with open(self._settings.grpc_client_cert_path, "rb") as f:
+                        cert_chain = f.read()
+
+                credentials = grpc.ssl_channel_credentials(
+                    root_certificates=root_certs,
+                    private_key=private_key,
+                    certificate_chain=cert_chain,
+                )
+                if self._settings.grpc_server_name_override:
+                    options.append(
+                        (
+                            "grpc.ssl_target_name_override",
+                            self._settings.grpc_server_name_override,
+                        )
+                    )
+                channel = grpc.secure_channel(target, credentials, options=options)
+            else:
+                channel = grpc.insecure_channel(target, options=options)
+            self._loopback_channel = channel
+            self._loopback_stub = GRPCInferenceServiceStub(channel)
+
+        assert self._loopback_stub is not None
+        return self._loopback_channel, self._loopback_stub
+
     def get_loopback_channel(self) -> grpc.Channel:
         """Lazily instantiate and return a dedicated loopback gRPC channel for pod-local operations."""
         if self._closed:
             raise RuntimeError("Cannot get channel from closed TritonGRPCChannelPool")
 
         with self._lock:
-            if self._loopback_channel is None:
-                target = self._loopback_target
-                options = list(self._options)
-                logger.info(
-                    "Initializing loopback gRPC channel for pod-local operations",
-                    extra={"target": target, "status": "loopback_channel_created"},
-                )
-                if self._settings.grpc_tls_enabled:
-                    root_certs: bytes | None = None
-                    if self._settings.grpc_ca_cert_path:
-                        with open(self._settings.grpc_ca_cert_path, "rb") as f:
-                            root_certs = f.read()
-                    private_key: bytes | None = None
-                    cert_chain: bytes | None = None
-                    if self._settings.grpc_client_key_path and self._settings.grpc_client_cert_path:
-                        with open(self._settings.grpc_client_key_path, "rb") as f:
-                            private_key = f.read()
-                        with open(self._settings.grpc_client_cert_path, "rb") as f:
-                            cert_chain = f.read()
-
-                    credentials = grpc.ssl_channel_credentials(
-                        root_certificates=root_certs,
-                        private_key=private_key,
-                        certificate_chain=cert_chain,
-                    )
-                    if self._settings.grpc_server_name_override:
-                        options.append(
-                            (
-                                "grpc.ssl_target_name_override",
-                                self._settings.grpc_server_name_override,
-                            )
-                        )
-                    channel = grpc.secure_channel(target, credentials, options=options)
-                else:
-                    channel = grpc.insecure_channel(target, options=options)
-                self._loopback_channel = channel
-                self._loopback_stub = GRPCInferenceServiceStub(channel)
-            return self._loopback_channel
+            channel, _ = self._ensure_loopback_resources_locked()
+            return channel
 
     def get_loopback_stub(self) -> GRPCInferenceServiceStub:
         """Return the GRPCInferenceServiceStub for pod-local loopback operations."""
-        self.get_loopback_channel()
+        if self._closed:
+            raise RuntimeError("Cannot get stub from closed TritonGRPCChannelPool")
+
         with self._lock:
-            assert self._loopback_stub is not None
-            return self._loopback_stub
+            _, stub = self._ensure_loopback_resources_locked()
+            return stub
 
     def reconnect_loopback_channel(self) -> grpc.Channel:
         """Recycle and recreate the loopback channel cleanly."""
@@ -274,7 +283,8 @@ class TritonGRPCChannelPool:
                 except Exception as exc:
                     logger.warning("Error draining recycled loopback channel", exc_info=exc)
 
-        return self.get_loopback_channel()
+            channel, _ = self._ensure_loopback_resources_locked()
+            return channel
 
     def is_channel_ready(self, pool_type: PoolType, timeout_seconds: float = 2.0) -> bool:
         """Check active connectivity and Triton liveness for the specified pool."""

@@ -97,7 +97,11 @@ jobs:
 
       - name: Verify Environment and Deployment Drift Zero-State
         run: |
-          python scripts/sync_env_to_deployments.py --check-only
+          if [ -f ".env.prod" ]; then
+            python scripts/sync_env_to_deployments.py --check-only
+          else
+            echo "Notice: .env.prod is gitignored and absent in checkout; skipping deployment drift check."
+          fi
 
   triton-config-lint:
     name: Triton Model Repository & Config Lint

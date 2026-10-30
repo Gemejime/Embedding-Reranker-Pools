@@ -12,6 +12,7 @@ Usage:
 import argparse
 import contextlib
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -202,7 +203,7 @@ def main() -> None:
                         "issues": drift,
                         "recommendation": (
                             f"Run 'python scripts/sync_env_to_deployments.py "
-                            f"--env-file {env_file.name} --sync' to resolve."
+                            f"--env-file {shlex.quote(str(env_file))} --sync' to resolve."
                         ),
                     }
                 )

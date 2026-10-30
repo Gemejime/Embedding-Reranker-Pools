@@ -250,6 +250,37 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
 
         pool.close()
 
+    @patch("grpc.insecure_channel")
+    def test_concurrent_loopback_stub_and_reconnect(self, mock_channel_fn: MagicMock) -> None:
+        import concurrent.futures
+
+        mock_channel = MagicMock()
+        mock_channel_fn.return_value = mock_channel
+
+        pool = TritonGRPCChannelPool(settings=self.settings)
+
+        def reader() -> None:
+            for _ in range(50):
+                stub = pool.get_loopback_stub()
+                self.assertIsNotNone(stub)
+
+        def reconnector() -> None:
+            for _ in range(20):
+                chan = pool.reconnect_loopback_channel()
+                self.assertIsNotNone(chan)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [
+                executor.submit(reader),
+                executor.submit(reconnector),
+                executor.submit(reader),
+                executor.submit(reconnector),
+            ]
+            for f in futures:
+                f.result()
+
+        pool.close()
+
     @patch("grpc.secure_channel")
     def test_client_cert_key_read_failure_propagates(
         self, mock_secure_channel_fn: MagicMock
