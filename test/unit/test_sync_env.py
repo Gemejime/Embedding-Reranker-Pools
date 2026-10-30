@@ -29,6 +29,7 @@ class TestSyncEnv(unittest.TestCase):
             "API_SECRET=topsecret\n"
             "AUTH_TOKEN=bearer123\n"
             "PRIVATE_KEY=pk123\n"
+            "RAG_SERVING_GRPC_CLIENT_KEY_PATH=/etc/tls/client.key\n"
         )
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as tf:
             tf.write(sample_env)
@@ -41,8 +42,9 @@ class TestSyncEnv(unittest.TestCase):
             self.assertEqual(parsed["QUOTED_VAL"], "hello # world")
             self.assertEqual(parsed["SINGLE_QUOTED"], "single val")
             self.assertEqual(parsed["EMPTY_VAL"], "")
+            self.assertEqual(parsed["RAG_SERVING_GRPC_CLIENT_KEY_PATH"], "/etc/tls/client.key")
 
-            # Verify secrets are excluded
+            # Verify secrets are excluded while path setting is retained
             self.assertNotIn("APP_PASSWORD", parsed)
             self.assertNotIn("API_SECRET", parsed)
             self.assertNotIn("AUTH_TOKEN", parsed)
@@ -124,6 +126,58 @@ class TestSyncEnv(unittest.TestCase):
             [],
             f"Zero drift expected between .env.prod and values.yaml, found: {drift}",
         )
+
+    def test_sync_to_deployments_emits_structured_json(self) -> None:
+        import io
+        import json
+        from contextlib import redirect_stdout
+
+        sample_values = {"env": {"secretName": "my-secret"}}
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as tf:
+            yaml.dump(sample_values, tf)
+            tf_path = Path(tf.name)
+
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                sync_to_deployments({"TEST_KEY": "123"}, target_file=tf_path)
+
+            output = buf.getvalue().strip()
+            record = json.loads(output)
+            self.assertEqual(record["status"], "success")
+            self.assertEqual(record["synced_count"], 1)
+            self.assertEqual(record["target_file"], str(tf_path))
+        finally:
+            if tf_path.exists():
+                tf_path.unlink()
+
+    def test_missing_source_check_only_exits_with_error(self) -> None:
+        import io
+        import json
+        import sys
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+
+        from scripts.sync_env_to_deployments import main
+
+        nonexistent_path = Path("/path/to/definitely/nonexistent/.env.test")
+        test_args = [
+            "sync_env_to_deployments.py",
+            "--env-file",
+            str(nonexistent_path),
+            "--check-only",
+        ]
+
+        buf = io.StringIO()
+        with patch.object(sys, "argv", test_args), redirect_stdout(buf):
+            with self.assertRaises(SystemExit) as ctx:
+                main()
+            self.assertEqual(ctx.exception.code, 1)
+
+        output = buf.getvalue().strip()
+        record = json.loads(output)
+        self.assertEqual(record["status"], "error")
+        self.assertIn("does not exist", record["message"])
 
 
 if __name__ == "__main__":

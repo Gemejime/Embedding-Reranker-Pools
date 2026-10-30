@@ -791,11 +791,11 @@ The microservice reads configuration parameters via Pydantic `ServingSettings` w
 | `RAG_SERVING_POOL_TYPE` | `string` | `online_embedding` | Hardware compute pool identity: `online_embedding`, `online_reranker`, `batch_ingestion`. |
 | `RAG_SERVING_SERVER_HOST` | `string` | `0.0.0.0` | Bind host interface for out-of-band operational ASGI server. |
 | `RAG_SERVING_SERVER_PORT` | `integer` | `8080` | HTTP port for operational server hosting `/healthz`, `/ready`, `/metrics`, `/docs`, `/redoc`, `/api/docs`, `/openapi.json`. |
-| `RAG_SERVING_TRITON_HTTP_URL` | `string` | `http://127.0.0.1:8000` | Internal pod-local Triton HTTP endpoint for KServe v2 health and readiness probes. |
-| `RAG_SERVING_TRITON_GRPC_URL` | `string` | `127.0.0.1:8001` | Internal pod-local Triton gRPC endpoint for KServe v2 binary tensor inference. |
-| `RAG_SERVING_ONLINE_EMBED_GRPC_URL` | `string` | `dns:///rag-inference-online-embedding.rag-inference-serving.svc.cluster.local:8001` | Upstream channel target for Online Embedding Pool (Pool A: NVIDIA L4/A10G On-Demand) with client-side round-robin load balancing. |
-| `RAG_SERVING_ONLINE_RERANK_GRPC_URL` | `string` | `dns:///rag-inference-online-reranker.rag-inference-serving.svc.cluster.local:8001` | Upstream channel target for Online Reranker Pool (Pool B: NVIDIA L4/A10G On-Demand) with client-side round-robin load balancing. |
-| `RAG_SERVING_BATCH_INGEST_GRPC_URL` | `string` | `dns:///rag-inference-batch-ingestion.rag-inference-serving.svc.cluster.local:8001` | Upstream channel target for Batch Ingestion Pool (Preemptible Spot Nodes) with client-side round-robin load balancing. |
+| `RAG_SERVING_TRITON_HTTP_URL` | `string` | `http://localhost:8000` | Internal pod-local Triton HTTP endpoint for KServe v2 health and readiness probes (runtime default: `http://localhost:8000`). |
+| `RAG_SERVING_TRITON_GRPC_URL` | `string` | `localhost:8001` | Internal pod-local Triton gRPC endpoint for KServe v2 binary tensor inference (runtime default: `localhost:8001`). Also serves as fallback for empty pool targets. |
+| `RAG_SERVING_ONLINE_EMBED_GRPC_URL` | `string` | `""` (inherits `triton_grpc_url`) | Channel target for Online Embedding Pool (Pool A: NVIDIA L4/A10G On-Demand). Runtime default is empty string which inherits `triton_grpc_url` (`localhost:8001`). Kubernetes deployment value uses gRPC DNS round-robin (`dns:///rag-inference-online-embedding.rag-inference-serving.svc.cluster.local:8001`). |
+| `RAG_SERVING_ONLINE_RERANK_GRPC_URL` | `string` | `""` (inherits `triton_grpc_url`) | Channel target for Online Reranker Pool (Pool B: NVIDIA L4/A10G On-Demand). Runtime default is empty string which inherits `triton_grpc_url` (`localhost:8001`). Kubernetes deployment value uses gRPC DNS round-robin (`dns:///rag-inference-online-reranker.rag-inference-serving.svc.cluster.local:8001`). |
+| `RAG_SERVING_BATCH_INGEST_GRPC_URL` | `string` | `""` (inherits `triton_grpc_url`) | Channel target for Batch Ingestion Pool (Preemptible Spot Nodes). Runtime default is empty string which inherits `triton_grpc_url` (`localhost:8001`). Kubernetes deployment value uses gRPC DNS round-robin (`dns:///rag-inference-batch-ingestion.rag-inference-serving.svc.cluster.local:8001`). |
 | `RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS` | `integer` | Pool-calibrated | Triton queue delay timeout in $\mu s$ (`2000` for online embedding, `4000` for online reranker, `50000` for batch ingestion). |
 | `RAG_SERVING_MAX_BATCH_SIZE` | `integer` | Pool-calibrated | Dynamic batch size ceiling (`32` for online embedding/reranker, `256` for batch ingestion). |
 | `RAG_SERVING_VRAM_CAPACITY_BYTES` | `integer` | `25769803776` | Total GPU VRAM capacity in bytes (24 GiB NVIDIA L4/A10G memory layout). |
@@ -827,7 +827,7 @@ The microservice reads configuration parameters via Pydantic `ServingSettings` w
 | `AWS_ENDPOINT_URL` | `string` | `null` | Custom S3 / MinIO / Ceph endpoint URL for cloud-native model engine caches. |
 | `MODEL_REGISTRY_STORAGE_URI` | `string` | `s3://rag-model-cache/tensorrt-engines/` | Artifact storage URI containing precompiled TensorRT model engines. |
 | `MODEL_REPOSITORY` | `string` | `/models` | Directory path containing compiled Triton model repositories. |
-| `TRITON_ARGS` | `string` | `--model-repository=/models --strict-model-config=true --log-verbose=0` | Process supervisor startup flags for `tritonserver`. |
+| `TRITON_ARGS` | `string` | `--strict-model-config=true --log-verbose=0` | Process supervisor startup flags for `tritonserver`. The entrypoint script automatically constructs `--model-repository=${MODEL_REPOSITORY}` unless already specified. |
 | `PYTHONUNBUFFERED` | `integer` | `1` | Forces unbuffered stdout/stderr output for real-time JSON log shipping. |
 | `PYTHONDONTWRITEBYTECODE` | `integer` | `1` | Prevents writing `.pyc` files inside containers. |
 | `LIVE_TRITON` | `integer` | `0` | Controls live vs. dry-run Triton execution during automated benchmark sweeps (`0` = mock, `1` = live). |

@@ -187,6 +187,18 @@
   - Expanded test suites to 112 passing tests across unit, integration, benchmark, and chaos suites with 100% clean mypy strict typing and ruff conformance.
   - Synchronized `.ai/doc-api.md`, bumped `api/openapi/openapi.json` to v1.2.0, and updated `.ai/progress-tracker.md`.
 
+- **Deployment, Secret Hardening & Loopback Invariants Session**:
+  - Remediated `.github/workflows/deploy.yml` by removing development branch `rag-inference-serving` from push trigger, aligning dispatch environment inputs, and injecting Kubernetes secrets safely through step-scoped environment variables and stdin YAML streaming rather than shell argument interpolation.
+  - Updated `deployments/SECRET_MANAGEMENT.md` to reflect the stdin secret injection pattern and documented headless Kubernetes Services (`clusterIP: None`) required for gRPC DNS round-robin load balancing.
+  - Added Secret-change rollout trigger (`checksum/secret`) to `deployments/helm/templates/deployment.yaml` alongside `checksum/config`.
+  - Configured headless service support (`clusterIP: None`) in `deployments/helm/templates/service.yaml` and `deployments/helm/values.yaml` to ensure gRPC `dns:///` targets resolve to individual pod replica endpoints.
+  - Decoupled `--model-repository` from default `TRITON_ARGS` in `deployments/helm/values.yaml`, `.env.example`, and `.env.prod`, allowing dynamic repository paths with fallback construction in `deployments/docker/entrypoint.sh`.
+  - Implemented dedicated loopback channel and stub management in `internal/client/grpc_pool.py` (`get_loopback_channel`, `get_loopback_stub`, `reconnect_loopback_channel`) and updated `internal/client/batch_client.py` so pod-local POSIX shared memory operations register and infer exclusively over the local loopback channel.
+  - Updated `scripts/sync_env_to_deployments.py` to retain `RAG_SERVING_GRPC_CLIENT_KEY_PATH` as a filesystem path, replaced console prints with structured JSON-line log records, and ensured `--check-only` exits with code 1 upon missing or empty environment sources.
+  - Tracked `.env.prod` in `.gitignore` (with dummy tokens sanitized) to resolve CI test drift failures (`test_repository_deployments_zero_drift`).
+  - Synchronized environment variable reference table in `.ai/doc-api.md` to distinguish runtime defaults from deployment targets.
+  - Expanded test coverage across `test/unit/test_sync_env.py`, `test/unit/test_batch_client.py`, `test/unit/test_helm_configs.py`, and `test/unit/test_grpc_pool.py`, achieving 143 passing tests across the entire test suite.
+
 - **Phase 3 Client Integration & Circuit Breaking Session**:
   - Implemented `api/proto/v1/triton_stubs.proto` with Go package option `api/proto/v1/inference` and compiled python gRPC stubs (`triton_stubs_pb2.py`, `triton_stubs_pb2_grpc.py`, `triton_stubs_pb2.pyi`) with package-safe relative imports.
   - Implemented zero-copy Triton KServe v2 binary tensor codec (`internal/client/kserve_codec.py`) supporting 4-byte little-endian string packing, fast FP16 buffer unpacking, and deterministic request construction.

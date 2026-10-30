@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 import contextlib
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -63,7 +64,10 @@ def parse_env_file(file_path: Path) -> dict[str, str]:
             val = raw_val.strip()
 
         # Exclude secrets from being committed into Helm values
-        if any(keyword in key.upper() for keyword in EXCLUDED_SECRET_KEYWORDS):
+        # Retain filesystem paths (such as RAG_SERVING_GRPC_CLIENT_KEY_PATH)
+        if key == "RAG_SERVING_GRPC_CLIENT_KEY_PATH" or key.endswith("_KEY_PATH"):
+            pass
+        elif any(keyword in key.upper() for keyword in EXCLUDED_SECRET_KEYWORDS):
             continue
 
         env_vars[key] = val
@@ -121,7 +125,15 @@ def sync_to_deployments(env_vars: dict[str, str], target_file: Path = HELM_VALUE
     with open(target_file, "w", encoding="utf-8") as f:
         yaml.dump(values_data, f, sort_keys=False, default_flow_style=False)
 
-    print(f"[OK] Successfully synced {len(env_vars)} variables to {target_file}")
+    print(
+        json.dumps(
+            {
+                "status": "success",
+                "synced_count": len(env_vars),
+                "target_file": str(target_file),
+            }
+        )
+    )
 
 
 def main() -> None:
@@ -148,13 +160,29 @@ def main() -> None:
 
     env_file = args.env_file
     if not env_file.exists():
-        print(f"[WARN] Environment file '{env_file}' does not exist. Skipping.")
-        sys.exit(0)
+        print(
+            json.dumps(
+                {
+                    "status": "error" if args.check_only else "warning",
+                    "message": f"Environment file '{env_file}' does not exist.",
+                    "file": str(env_file),
+                }
+            )
+        )
+        sys.exit(1 if args.check_only else 0)
 
     env_vars = parse_env_file(env_file)
     if not env_vars:
-        print(f"[WARN] No valid environment variables found in '{env_file}'.")
-        sys.exit(0)
+        print(
+            json.dumps(
+                {
+                    "status": "error" if args.check_only else "warning",
+                    "message": f"No valid environment variables found in '{env_file}'.",
+                    "file": str(env_file),
+                }
+            )
+        )
+        sys.exit(1 if args.check_only else 0)
 
     with open(HELM_VALUES_FILE, encoding="utf-8") as f:
         values_data = yaml.safe_load(f) or {}
@@ -165,18 +193,31 @@ def main() -> None:
     if args.check_only:
         if drift:
             print(
-                f"[DRIFT] Drift detected between '{env_file.name}' "
-                "and deployments/helm/values.yaml:"
-            )
-            for issue in drift:
-                print(f"   * {issue}")
-            print(
-                f"\nRun 'python scripts/sync_env_to_deployments.py "
-                f"--env-file {env_file.name} --sync' to resolve."
+                json.dumps(
+                    {
+                        "status": "drift_detected",
+                        "env_file": env_file.name,
+                        "target_file": str(HELM_VALUES_FILE),
+                        "drift_count": len(drift),
+                        "issues": drift,
+                        "recommendation": (
+                            f"Run 'python scripts/sync_env_to_deployments.py "
+                            f"--env-file {env_file.name} --sync' to resolve."
+                        ),
+                    }
+                )
             )
             sys.exit(1)
         else:
-            print(f"[OK] deployments/helm/values.yaml is in sync with '{env_file.name}'.")
+            print(
+                json.dumps(
+                    {
+                        "status": "success",
+                        "message": f"deployments/helm/values.yaml is in sync with '{env_file.name}'.",
+                        "target_file": str(HELM_VALUES_FILE),
+                    }
+                )
+            )
             sys.exit(0)
 
     if args.sync:

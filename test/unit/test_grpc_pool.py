@@ -227,6 +227,29 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
             pool.get_channel(PoolType.ONLINE_EMBEDDING)
         pool.close()
 
+    @patch("grpc.insecure_channel")
+    def test_loopback_channel_and_stub(self, mock_channel_fn: MagicMock) -> None:
+        mock_channel = MagicMock()
+        mock_channel_fn.return_value = mock_channel
+
+        pool = TritonGRPCChannelPool(settings=self.settings)
+        self.assertIsNone(pool._loopback_channel)
+
+        chan = pool.get_loopback_channel()
+        self.assertEqual(chan, mock_channel)
+        mock_channel_fn.assert_called_once_with(
+            self.settings.triton_grpc_url, options=DEFAULT_GRPC_OPTIONS
+        )
+
+        stub = pool.get_loopback_stub()
+        self.assertIsNotNone(stub)
+
+        reconnected = pool.reconnect_loopback_channel()
+        self.assertEqual(reconnected, mock_channel)
+        mock_channel.close.assert_called_once()
+
+        pool.close()
+
     @patch("grpc.secure_channel")
     def test_client_cert_key_read_failure_propagates(
         self, mock_secure_channel_fn: MagicMock
