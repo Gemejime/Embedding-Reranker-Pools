@@ -29,12 +29,16 @@ Configure the following secrets in **GitHub Repository Settings &rarr; Secrets a
 
 | Secret Name                    | Purpose                                                                | Target Microservice Env Variable |
 | :----------------------------- | :--------------------------------------------------------------------- | :------------------------------- |
-| `KUBECONFIG`                 | Base64 or raw kubeconfig granting deployment access to target cluster  | *Deployment context only*      |
+| `KUBECONFIG`                 | Raw, plaintext kubeconfig granting deployment access to target cluster | *Deployment context only*      |
 | `PROD_HF_TOKEN`              | Hugging Face token for downloading gated/private weights during export | `HF_TOKEN`                     |
 | `PROD_AWS_ACCESS_KEY_ID`     | Storage access key for AWS S3, MinIO, or Cloudflare R2                 | `AWS_ACCESS_KEY_ID`            |
 | `PROD_AWS_SECRET_ACCESS_KEY` | Storage secret key for AWS S3, MinIO, or Cloudflare R2                 | `AWS_SECRET_ACCESS_KEY`        |
 | `PROD_RAG_SERVING_API_KEY`   | Bearer token securing administrative endpoints (`/metrics`)          | `RAG_SERVING_API_KEY`          |
+| `PROD_KAFKA_SASL_USERNAME`   | Username for Kafka SCRAM-SHA-512 authentication (KEDA triggers)        | `KAFKA_SASL_USERNAME`          |
 | `PROD_KAFKA_SASL_PASSWORD`   | Password for Kafka SCRAM-SHA-512 authentication (KEDA triggers)        | `KAFKA_SASL_PASSWORD`          |
+
+> [!IMPORTANT]
+> **KEDA Kafka Trigger Authentication**: Injecting `KAFKA_SASL_PASSWORD` into the worker pod environment alone does **not** provide credentials to KEDA. The KEDA operator runs as an external controller in its own namespace and queries Kafka broker lag independently. KEDA requires explicit authentication configured via a `TriggerAuthentication` resource that references `KAFKA_SASL_USERNAME` and `KAFKA_SASL_PASSWORD` from `rag-inference-secrets`, coupled with `sasl: scram_sha512` and `tls: enable` in the trigger metadata.
 
 ---
 
@@ -46,34 +50,52 @@ When code merges into `main` or `master`:
 flowchart LR
     A["GitHub Push / Dispatch"] --> B["GitHub Actions Runner"]
     B --> C["Fetch GitHub Actions Secrets"]
-    C --> D["Inject Secrets via Stdin Manifest"]
-    D --> E["helm upgrade --install ... --values deployments/helm/values.yaml"]
-    E --> F["Pod mounts ConfigMap + Secret via envFrom"]
-    F --> G["kubectl rollout status validation"]
+    B --> D["Serialize JSON Manifest via Python"]
+    D --> E["kubectl apply -f - (Zero Escaping Glitches)"]
+    E --> F["helm upgrade --install ... --values deployments/helm/values.yaml"]
+    F --> G["Pod mounts ConfigMap + Secret via envFrom"]
+    G --> H["kubectl rollout status validation"]
 ```
 
-### Safe Injection Command:
+### Safe Injection Command (JSON Serialization via Python):
+
+To preserve quotes, backslashes, and special characters exactly without shell escaping bugs or heredoc interpolation errors, credentials are serialized directly to JSON and piped to `kubectl apply`:
 
 ```bash
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-  name: rag-inference-secrets
-  namespace: rag-inference-serving
-type: Opaque
-stringData:
-  HF_TOKEN: "${HF_TOKEN}"
-  AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
-  AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
-  RAG_SERVING_API_KEY: "${RAG_SERVING_API_KEY}"
-  KAFKA_SASL_PASSWORD: "${KAFKA_SASL_PASSWORD}"
-EOF
+python3 -c '
+import json, os, sys
+secret = {
+    "apiVersion": "v1",
+    "kind": "Secret",
+    "metadata": {
+        "name": "rag-inference-secrets",
+        "namespace": "rag-inference-serving",
+    },
+    "type": "Opaque",
+    "stringData": {
+        "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
+        "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID", ""),
+        "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+        "RAG_SERVING_API_KEY": os.environ.get("RAG_SERVING_API_KEY", ""),
+        "KAFKA_SASL_USERNAME": os.environ.get("KAFKA_SASL_USERNAME", ""),
+        "KAFKA_SASL_PASSWORD": os.environ.get("KAFKA_SASL_PASSWORD", ""),
+    },
+}
+json.dump(secret, sys.stdout)
+' | kubectl apply -f -
 ```
 
 ---
 
-## 4. Pod-Level Consumption
+## 4. Headless Services & gRPC Round-Robin Resolution
+
+Client-side round-robin load balancing via gRPC (`dns:///...`) requires headless Kubernetes Services (`clusterIP: None`) so CoreDNS resolves the A/AAAA records of individual pod endpoints rather than a single virtual ClusterIP.
+
+To ensure existing Helm releases can upgrade cleanly without attempting an immutable `spec.clusterIP` change on the primary service, the Helm chart introduces a dedicated headless Service named `{{ .Release.Name }}-headless` (e.g. `rag-inference-online-embedding-headless`). The primary Service (`{{ .Release.Name }}`) retains its assigned ClusterIP for standard HTTP/metrics/readiness routing.
+
+---
+
+## 5. Pod-Level Consumption
 
 In `deployments/helm/templates/deployment.yaml`:
 

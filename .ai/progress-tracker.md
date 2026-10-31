@@ -187,6 +187,16 @@
   - Expanded test suites to 112 passing tests across unit, integration, benchmark, and chaos suites with 100% clean mypy strict typing and ruff conformance.
   - Synchronized `.ai/doc-api.md`, bumped `api/openapi/openapi.json` to v1.2.0, and updated `.ai/progress-tracker.md`.
 
+- **Deployment Hardening, Headless Service Migration & CI Zero-Drift Session**:
+  - Remediated loopback stub race condition in `internal/client/grpc_pool.py` by atomically securing channel/stub instantiation and validation under `_lock` in `_ensure_loopback_resources_locked()`, preventing clearing between retrieval and validation.
+  - Hardened secret injection in `.github/workflows/deploy.yml` and `deployments/SECRET_MANAGEMENT.md` to serialize step-scoped credentials as JSON via Python before streaming to `kubectl apply -f -`, preserving quotes, backslashes, and special characters cleanly.
+  - Updated `deployments/helm/templates/service.yaml` and `deployments/helm/values.yaml` to decouple the primary Service (`type: ClusterIP`) from a dedicated headless Service (`{{ .Release.Name }}-headless` with `clusterIP: None`), allowing existing releases to upgrade without immutable `spec.clusterIP` conflicts, and routed gRPC `dns:///` targets to `-headless`.
+  - Added KEDA `TriggerAuthentication` template (`deployments/helm/templates/keda-triggerauth.yaml`) and configured explicit SASL/TLS authentication (`sasl: scram_sha512`, `tls: enable`, `rag-inference-batch-keda-auth`) in `deployments/helm/values-batch-ingestion.yaml` and `.github/workflows/deploy.yml`.
+  - Configured configurable `secretName` parameters across `deployments/argocd/applicationset.yaml` elements and provisioned `deployments/argocd/prerequisite-secrets.yaml` with sync-wave `0` (PreSync) to ensure prerequisite secrets exist before pools initialize.
+  - Hardened CI workflow (`.github/workflows/ci.yml`) and `test/unit/test_sync_env.py` to gracefully handle checkout environments where gitignored `.env.prod` is absent without failing drift verification.
+  - Shell-quoted full environment file path in `scripts/sync_env_to_deployments.py` recommendation using `shlex.quote(str(env_file))`.
+  - Synchronized `.ai/doc-api.md`, `.env.example`, `.env.prod`, and unit tests (`test_helm_configs.py`, `test_argocd_configs.py`, `test_sync_env.py`, `test_grpc_pool.py`).
+
 - **Deployment, Secret Hardening & Loopback Invariants Session**:
   - Remediated `.github/workflows/deploy.yml` by removing development branch `rag-inference-serving` from push trigger, aligning dispatch environment inputs, and injecting Kubernetes secrets safely through step-scoped environment variables and stdin YAML streaming rather than shell argument interpolation.
   - Updated `deployments/SECRET_MANAGEMENT.md` to reflect the stdin secret injection pattern and documented headless Kubernetes Services (`clusterIP: None`) required for gRPC DNS round-robin load balancing.

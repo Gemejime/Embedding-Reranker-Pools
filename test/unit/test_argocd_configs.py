@@ -33,14 +33,29 @@ class TestArgoCDConfigs(unittest.TestCase):
         self.assertEqual(pools["online-embedding"]["nodeLifecycle"], "on-demand")
         self.assertEqual(pools["online-reranker"]["nodeLifecycle"], "on-demand")
         self.assertEqual(pools["batch-ingestion"]["nodeLifecycle"], "spot")
+        self.assertEqual(pools["online-embedding"]["secretName"], "rag-inference-secrets")
+        self.assertEqual(pools["online-reranker"]["secretName"], "rag-inference-secrets")
+        self.assertEqual(pools["batch-ingestion"]["secretName"], "rag-inference-secrets")
 
-        # Verify Helm path and sync policy
+        # Verify Helm path, parameters, and sync policy
         template = data["spec"]["template"]["spec"]
         self.assertEqual(template["source"]["path"], "deployments/helm")
         self.assertEqual(template["source"]["targetRevision"], "main")
+        params = {p["name"]: p["value"] for p in template["source"]["helm"].get("parameters", [])}
+        self.assertEqual(params.get("env.secretName"), "{{.secretName}}")
         self.assertTrue(template["syncPolicy"]["automated"]["prune"])
         self.assertTrue(template["syncPolicy"]["automated"]["selfHeal"])
         self.assertIn("CreateNamespace=true", template["syncPolicy"]["syncOptions"])
+
+    def test_prerequisite_secrets_manifest(self) -> None:
+        secret_path = os.path.join(self.argocd_dir, "prerequisite-secrets.yaml")
+        with open(secret_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        self.assertEqual(data["kind"], "Secret")
+        self.assertEqual(data["metadata"]["name"], "rag-inference-secrets")
+        self.assertEqual(data["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"], "0")
+        self.assertIn("HF_TOKEN", data["stringData"])
+        self.assertIn("KAFKA_SASL_PASSWORD", data["stringData"])
 
     def test_standalone_application_online_embed(self) -> None:
         path = os.path.join(self.argocd_dir, "application-online-embed.yaml")

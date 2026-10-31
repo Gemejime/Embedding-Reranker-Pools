@@ -1,0 +1,13 @@
+{{- if and .Values.autoscaling.enabled .Values.autoscaling.triggerAuthentication }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ .Values.autoscaling.triggerAuthentication.name | default (printf "%s-keda-auth" .Release.Name) }}
+  labels:
+    app.kubernetes.io/name: rag-inference-serving
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  secretTargetRef:
+    {{- toYaml .Values.autoscaling.triggerAuthentication.secretTargetRef | nindent 4 }}
+{{- end }}
+
