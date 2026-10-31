@@ -6,6 +6,11 @@ metadata:
     app.kubernetes.io/name: rag-inference-serving
     app.kubernetes.io/instance: {{ .Release.Name }}
 data:
-  {{- range $key, $value := .Values.env }}
-  {{ $key }}: {{ $value | quote }}
+  PORT: {{ default "8080" (get .Values.env "PORT") | quote }}
+  GRPC_PORT: {{ default "50051" (get .Values.env "GRPC_PORT") | quote }}
+  {{- range $key, $val := .Values.env }}
+  {{- if and (ne $key "secretName") (ne $key "PORT") (ne $key "GRPC_PORT") (ne $val nil) }}
+  {{ $key }}: {{ $val | quote }}
   {{- end }}
+  {{- end }}
+

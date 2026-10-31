@@ -14,6 +14,13 @@ spec:
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.secretChecksum }}
+        checksum/secret: {{ .Values.secretChecksum | quote }}
+        {{- else if .Values.env.secretName }}
+        checksum/secret: {{ (lookup "v1" "Secret" .Release.Namespace .Values.env.secretName) | toYaml | sha256sum }}
+        {{- end }}
       labels:
         app.kubernetes.io/name: rag-inference-serving
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -46,6 +53,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ .Release.Name }}-config
+            {{- if .Values.env.secretName }}
+            - secretRef:
+                name: {{ .Values.env.secretName }}
+            {{- end }}
           ports:
             - name: triton-grpc
               containerPort: {{ .Values.service.grpcPort }}

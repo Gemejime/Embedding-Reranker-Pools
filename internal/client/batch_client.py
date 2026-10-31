@@ -196,7 +196,11 @@ class BatchIngestionClient:
             packed_bytes = pack_string_tensor(texts)
             shm_name = f"rag_batch_in_{uuid.uuid4().hex[:12]}"
             region = SharedMemoryRegion(name=shm_name, size_bytes=len(packed_bytes))
-            current_stub = self._pool.get_stub(PoolType.BATCH_INGESTION)
+            # Pod-local SHM requires registration and inference over a dedicated loopback channel
+            if hasattr(self._pool, "get_loopback_stub"):
+                current_stub = self._pool.get_loopback_stub()
+            else:
+                current_stub = self._pool.get_stub(PoolType.BATCH_INGESTION)
 
             try:
                 region.allocate()
@@ -278,7 +282,10 @@ class BatchIngestionClient:
                             "status": "retry_backoff",
                         },
                     )
-                    self._pool.reconnect_channel(PoolType.BATCH_INGESTION)
+                    if hasattr(self._pool, "reconnect_loopback_channel"):
+                        self._pool.reconnect_loopback_channel()
+                    else:
+                        self._pool.reconnect_channel(PoolType.BATCH_INGESTION)
                     time.sleep(sleep_time)
                 else:
                     raise

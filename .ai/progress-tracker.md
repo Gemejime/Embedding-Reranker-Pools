@@ -145,6 +145,13 @@
   - Updated `.ai/doc-api.md` queue rejection tripping triggers to accurately reflect the 64-request queue limit and 10 ms timeout policy rather than conflating it with the 4 ms dynamic batching window.
   - Added unit test coverage across all modified components with 100% clean test passes, Ruff lint/format conformance, and strict Mypy validation.
 
+- **Production Compute Pool & gRPC Resolver Session**:
+  - Upgraded pod-local Triton KServe v2 health probe URL (`RAG_SERVING_TRITON_HTTP_URL`) and inference endpoint (`RAG_SERVING_TRITON_GRPC_URL`) to explicit loopback addresses (`http://127.0.0.1:8000` and `127.0.0.1:8001`) in `.env`, `.env.prod`, and `.env.example`.
+  - Configured decoupled compute pool endpoints using Kubernetes DNS resolver targets (`dns:///`) for Online Embedding, Online Reranker, and Batch Ingestion pools.
+  - Enhanced `internal/client/grpc_pool.py` to automatically activate gRPC client-side `round_robin` load balancing policy on `dns:` resolver targets across headless Kubernetes pod replicas.
+  - Added unit test `test_dns_target_round_robin_resolution` in `test/unit/test_grpc_pool.py` verifying `round_robin` LB option propagation.
+  - Synchronized environment documentation in `.ai/doc-api.md`.
+
 - **Environment Configuration Template & Validation Session**:
 
   - Authored comprehensive environment configuration template (`.env.example`) defining all operational parameters across 10 structured sections: Service Identity & Topology (`RAG_SERVING_POOL_TYPE`), Out-of-band ASGI Server (`RAG_SERVING_SERVER_HOST`, `RAG_SERVING_SERVER_PORT`), Triton KServe v2 URLs, Decoupled Pool gRPC Targets, Calibrated Dynamic Batching Ceilings (`RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS`, `RAG_SERVING_MAX_BATCH_SIZE`), VRAM Headroom Guards (`RAG_SERVING_VRAM_CAPACITY_BYTES`, `RAG_SERVING_MAX_STATIC_VRAM_BYTES`, `RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO`), Expected Model Engines (`RAG_SERVING_MODELS_EXPECTED`), POSIX SHM Mounts (`RAG_SERVING_SHM_BASE_PATH`), Triton Container Supervisor (`MODEL_REPOSITORY`, `TRITON_ARGS`), and Benchmark Test Orchestration (`LIVE_TRITON`, `TRITON_ONLINE_GRPC_TARGET`, `TRITON_BATCH_GRPC_TARGET`, `TRITON_CLUSTER_ENDPOINTS`).
@@ -152,6 +159,23 @@
   - Documented Section 6 (Environment Variables & Operational Configuration Reference) in `.ai/doc-api.md`.
   - Updated `README.md` local environment setup with `.env` copy instructions.
   - Verified 100% test pass rate across test suite and confirmed ruff lint/formatting compliance.
+
+- **CI/CD Secret Injection & Automated Deployment Session**:
+
+  - Configured GitHub Actions deployment workflow (`.github/workflows/deploy.yml`) with automated Kubernetes secret injection (`rag-inference-secrets`) and Helm upgrade/rollout verification.
+  - Implemented `secretRef` binding under `envFrom` in `deployments/helm/templates/deployment.yaml` conditioned on `.Values.env.secretName`.
+  - Added CI environment drift audit step in `.github/workflows/ci.yml` enforcing zero-drift validation on PRs and pushes.
+  - Authored comprehensive secret management guide (`deployments/SECRET_MANAGEMENT.md`) documenting GitHub Secrets inventory and injection pipelines.
+  - Added unit test `test_deployment_template_annotations_and_secret_ref` in `test/unit/test_helm_configs.py` validating Helm template conditional `secretRef` rendering.
+
+- **Environment Synchronization & Deployment Enforcement Session**:
+
+  - Implemented dynamic ConfigMap ingestion (`deployments/helm/templates/configmap.yaml`) dynamically iterating over `.Values.env`, preserving `PORT` (8080) and `GRPC_PORT` (50051) fallbacks while ignoring `secretName` and nil values.
+  - Added `checksum/config` sha256 annotation to `deployments/helm/templates/deployment.yaml` under `spec.template.metadata.annotations` to guarantee automated rolling pod restarts upon ConfigMap modification.
+  - Developed synchronization and drift validation script (`scripts/sync_env_to_deployments.py`) supporting `--sync` and `--check-only`, preserving `values.yaml` top-level blocks and `secretName`, and excluding sensitive credentials (`PASSWORD`, `SECRET`, `TOKEN`, `KEY`).
+  - Added Git pre-commit hook (`.git/hooks/pre-commit`) enforcing zero configuration drift prior to commit.
+  - Updated developer documentation header in `.env.example` documenting that `.env.prod` is the sole source of truth for deployment manifests.
+  - Added unit test suite in `test/unit/test_sync_env.py` validating environment parsing, secret scrubbing, drift detection, and zero-drift verification.
 
 - **Phase 4 Cluster Load Sweeps, Chaos & Autoscaling Session**:
 
@@ -162,6 +186,28 @@
   - Implemented root operational tooling (`Makefile`) and production architecture reference guide (`README.md`).
   - Expanded test suites to 112 passing tests across unit, integration, benchmark, and chaos suites with 100% clean mypy strict typing and ruff conformance.
   - Synchronized `.ai/doc-api.md`, bumped `api/openapi/openapi.json` to v1.2.0, and updated `.ai/progress-tracker.md`.
+
+- **Deployment Hardening, Headless Service Migration & CI Zero-Drift Session**:
+  - Remediated loopback stub race condition in `internal/client/grpc_pool.py` by atomically securing channel/stub instantiation and validation under `_lock` in `_ensure_loopback_resources_locked()`, preventing clearing between retrieval and validation.
+  - Hardened secret injection in `.github/workflows/deploy.yml` and `deployments/SECRET_MANAGEMENT.md` to serialize step-scoped credentials as JSON via Python before streaming to `kubectl apply -f -`, preserving quotes, backslashes, and special characters cleanly.
+  - Updated `deployments/helm/templates/service.yaml` and `deployments/helm/values.yaml` to decouple the primary Service (`type: ClusterIP`) from a dedicated headless Service (`{{ .Release.Name }}-headless` with `clusterIP: None`), allowing existing releases to upgrade without immutable `spec.clusterIP` conflicts, and routed gRPC `dns:///` targets to `-headless`.
+  - Added KEDA `TriggerAuthentication` template (`deployments/helm/templates/keda-triggerauth.yaml`) and configured explicit SASL/TLS authentication (`sasl: scram_sha512`, `tls: enable`, `rag-inference-batch-keda-auth`) in `deployments/helm/values-batch-ingestion.yaml` and `.github/workflows/deploy.yml`.
+  - Configured configurable `secretName` parameters across `deployments/argocd/applicationset.yaml` elements and provisioned `deployments/argocd/prerequisite-secrets.yaml` with sync-wave `0` (PreSync) to ensure prerequisite secrets exist before pools initialize.
+  - Hardened CI workflow (`.github/workflows/ci.yml`) and `test/unit/test_sync_env.py` to gracefully handle checkout environments where gitignored `.env.prod` is absent without failing drift verification.
+  - Shell-quoted full environment file path in `scripts/sync_env_to_deployments.py` recommendation using `shlex.quote(str(env_file))`.
+  - Synchronized `.ai/doc-api.md`, `.env.example`, `.env.prod`, and unit tests (`test_helm_configs.py`, `test_argocd_configs.py`, `test_sync_env.py`, `test_grpc_pool.py`).
+
+- **Deployment, Secret Hardening & Loopback Invariants Session**:
+  - Remediated `.github/workflows/deploy.yml` by removing development branch `rag-inference-serving` from push trigger, aligning dispatch environment inputs, and injecting Kubernetes secrets safely through step-scoped environment variables and stdin YAML streaming rather than shell argument interpolation.
+  - Updated `deployments/SECRET_MANAGEMENT.md` to reflect the stdin secret injection pattern and documented headless Kubernetes Services (`clusterIP: None`) required for gRPC DNS round-robin load balancing.
+  - Added Secret-change rollout trigger (`checksum/secret`) to `deployments/helm/templates/deployment.yaml` alongside `checksum/config`.
+  - Configured headless service support (`clusterIP: None`) in `deployments/helm/templates/service.yaml` and `deployments/helm/values.yaml` to ensure gRPC `dns:///` targets resolve to individual pod replica endpoints.
+  - Decoupled `--model-repository` from default `TRITON_ARGS` in `deployments/helm/values.yaml`, `.env.example`, and `.env.prod`, allowing dynamic repository paths with fallback construction in `deployments/docker/entrypoint.sh`.
+  - Implemented dedicated loopback channel and stub management in `internal/client/grpc_pool.py` (`get_loopback_channel`, `get_loopback_stub`, `reconnect_loopback_channel`) and updated `internal/client/batch_client.py` so pod-local POSIX shared memory operations register and infer exclusively over the local loopback channel.
+  - Updated `scripts/sync_env_to_deployments.py` to retain `RAG_SERVING_GRPC_CLIENT_KEY_PATH` as a filesystem path, replaced console prints with structured JSON-line log records, and ensured `--check-only` exits with code 1 upon missing or empty environment sources.
+  - Tracked `.env.prod` in `.gitignore` (with dummy tokens sanitized) to resolve CI test drift failures (`test_repository_deployments_zero_drift`).
+  - Synchronized environment variable reference table in `.ai/doc-api.md` to distinguish runtime defaults from deployment targets.
+  - Expanded test coverage across `test/unit/test_sync_env.py`, `test/unit/test_batch_client.py`, `test/unit/test_helm_configs.py`, and `test/unit/test_grpc_pool.py`, achieving 143 passing tests across the entire test suite.
 
 - **Phase 3 Client Integration & Circuit Breaking Session**:
   - Implemented `api/proto/v1/triton_stubs.proto` with Go package option `api/proto/v1/inference` and compiled python gRPC stubs (`triton_stubs_pb2.py`, `triton_stubs_pb2_grpc.py`, `triton_stubs_pb2.pyi`) with package-safe relative imports.

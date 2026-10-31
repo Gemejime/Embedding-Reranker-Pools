@@ -134,6 +134,27 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
         self.assertIn(("grpc.lb_policy_name", "round_robin"), options)
         pool.close()
 
+    @patch("grpc.insecure_channel")
+    def test_dns_target_round_robin_resolution(self, mock_channel_fn: MagicMock) -> None:
+        mock_channel = MagicMock()
+        mock_channel_fn.return_value = mock_channel
+
+        pool = TritonGRPCChannelPool(
+            embedding_target="dns:///rag-inference-online-embedding.rag-inference-serving.svc.cluster.local:8001"
+        )
+        target = pool.get_target(PoolType.ONLINE_EMBEDDING)
+        self.assertEqual(
+            target,
+            "dns:///rag-inference-online-embedding.rag-inference-serving.svc.cluster.local:8001",
+        )
+
+        chan = pool.get_channel(PoolType.ONLINE_EMBEDDING)
+        self.assertEqual(chan, mock_channel)
+        call_kwargs = mock_channel_fn.call_args[1]
+        options = call_kwargs["options"]
+        self.assertIn(("grpc.lb_policy_name", "round_robin"), options)
+        pool.close()
+
     def test_unprefixed_hostname_multi_target_raises_value_error(self) -> None:
         with self.assertRaises(ValueError) as ctx:
             TritonGRPCChannelPool(batch_target=["worker-1.local:8001", "worker-2.local:8001"])
@@ -204,6 +225,60 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
         pool = TritonGRPCChannelPool(settings=tls_settings)
         with self.assertRaises(FileNotFoundError):
             pool.get_channel(PoolType.ONLINE_EMBEDDING)
+        pool.close()
+
+    @patch("grpc.insecure_channel")
+    def test_loopback_channel_and_stub(self, mock_channel_fn: MagicMock) -> None:
+        mock_channel = MagicMock()
+        mock_channel_fn.return_value = mock_channel
+
+        pool = TritonGRPCChannelPool(settings=self.settings)
+        self.assertIsNone(pool._loopback_channel)
+
+        chan = pool.get_loopback_channel()
+        self.assertEqual(chan, mock_channel)
+        mock_channel_fn.assert_called_once_with(
+            self.settings.triton_grpc_url, options=DEFAULT_GRPC_OPTIONS
+        )
+
+        stub = pool.get_loopback_stub()
+        self.assertIsNotNone(stub)
+
+        reconnected = pool.reconnect_loopback_channel()
+        self.assertEqual(reconnected, mock_channel)
+        mock_channel.close.assert_called_once()
+
+        pool.close()
+
+    @patch("grpc.insecure_channel")
+    def test_concurrent_loopback_stub_and_reconnect(self, mock_channel_fn: MagicMock) -> None:
+        import concurrent.futures
+
+        mock_channel = MagicMock()
+        mock_channel_fn.return_value = mock_channel
+
+        pool = TritonGRPCChannelPool(settings=self.settings)
+
+        def reader() -> None:
+            for _ in range(50):
+                stub = pool.get_loopback_stub()
+                self.assertIsNotNone(stub)
+
+        def reconnector() -> None:
+            for _ in range(20):
+                chan = pool.reconnect_loopback_channel()
+                self.assertIsNotNone(chan)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [
+                executor.submit(reader),
+                executor.submit(reconnector),
+                executor.submit(reader),
+                executor.submit(reconnector),
+            ]
+            for f in futures:
+                f.result()
+
         pool.close()
 
     @patch("grpc.secure_channel")

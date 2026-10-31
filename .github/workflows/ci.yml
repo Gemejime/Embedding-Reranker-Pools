@@ -87,6 +87,22 @@ jobs:
           print("Secured logging check passed cleanly.")
           '
 
+      - name: Set up Python for Drift Check
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Verify Environment and Deployment Drift Zero-State
+        run: |
+          if [ -f ".env.prod" ]; then
+            python scripts/sync_env_to_deployments.py --check-only
+          else
+            echo "Notice: .env.prod is gitignored and absent in checkout; skipping deployment drift check."
+          fi
+
   triton-config-lint:
     name: Triton Model Repository & Config Lint
     runs-on: ubuntu-latest
