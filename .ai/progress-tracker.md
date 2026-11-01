@@ -189,11 +189,11 @@
 
 - **CI/CD Pipeline Hardening, ArgoCD Bootstrap & gRPC TLS Deduplication Session**:
   - Extracted duplicated TLS and insecure channel creation logic in `internal/client/grpc_pool.py` into a unified private helper `_create_channel()`, consolidating certificate loading, credential construction, and SNI target overrides across remote and loopback paths.
-  - Hardened ArgoCD prerequisite secret manifest `deployments/argocd/prerequisite-secrets.yaml` by removing empty placeholders for `HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `RAG_SERVING_API_KEY`, preventing live secret overwrites.
-  - Documented prerequisite secret bootstrap ordering in `README.md` (`prerequisite-secrets.yaml` before `applicationset.yaml`) and extended `test_prerequisite_secrets_manifest` in `test/unit/test_argocd_configs.py` to enforce this bootstrap invariant and assert exclusion of sensitive credentials.
+  - Hardened ArgoCD prerequisite secret manifest `deployments/argocd/prerequisite-secrets.yaml` by removing empty placeholders for `HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `RAG_SERVING_API_KEY`, `KAFKA_SASL_USERNAME`, and `KAFKA_SASL_PASSWORD`, preventing live secret overwrites.
+  - Documented prerequisite secret bootstrap ordering in `README.md` (namespace creation -> `prerequisite-secrets.yaml` -> `applicationset.yaml`) and extended `test_prerequisite_secrets_manifest` in `test/unit/test_argocd_configs.py` to enforce this bootstrap invariant and assert exclusion of all sensitive credentials.
   - Removed invocation of `scripts/sync_env_to_deployments.py` from `.github/workflows/ci.yml`, retaining manual CLI execution and `.git/hooks/pre-commit` enforcement where local `.env.prod` exists.
   - Added pre-validation of required deployment credentials (`HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `RAG_SERVING_API_KEY`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD`) in `.github/workflows/deploy.yml` prior to `kubectl apply`, ensuring missing credentials fail early without mutating live secrets.
-  - Updated `deployments/SECRET_MANAGEMENT.md` and `.ai/doc-api.md` to document the pre-validation and bootstrap prerequisites.
+  - Updated `deployments/SECRET_MANAGEMENT.md` and `.ai/doc-api.md` to document deployment credential pre-validation, required kubectl apply ordering, Kafka credential prerequisites for the batch pool, and decoupled loopback gRPC transport security (`RAG_SERVING_GRPC_LOOPBACK_TLS_ENABLED`).
 
 - **Deployment Hardening, Headless Service Migration & CI Zero-Drift Session**:
   - Remediated loopback stub race condition in `internal/client/grpc_pool.py` by atomically securing channel/stub instantiation and validation under `_lock` in `_ensure_loopback_resources_locked()`, preventing clearing between retrieval and validation.

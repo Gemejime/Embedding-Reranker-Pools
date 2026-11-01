@@ -55,22 +55,35 @@ class TestArgoCDConfigs(unittest.TestCase):
         self.assertEqual(data["metadata"]["name"], "rag-inference-secrets")
         self.assertEqual(data["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"], "0")
         string_data = data.get("stringData", {})
+        data_block = data.get("data", {})
         # Verify sensitive working credentials are not overwritten by empty placeholders
-        self.assertNotIn("HF_TOKEN", string_data)
-        self.assertNotIn("AWS_ACCESS_KEY_ID", string_data)
-        self.assertNotIn("AWS_SECRET_ACCESS_KEY", string_data)
-        self.assertNotIn("RAG_SERVING_API_KEY", string_data)
-        self.assertIn("KAFKA_SASL_PASSWORD", string_data)
+        for key in [
+            "HF_TOKEN",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "RAG_SERVING_API_KEY",
+            "KAFKA_SASL_USERNAME",
+            "KAFKA_SASL_PASSWORD",
+        ]:
+            self.assertNotIn(key, string_data)
+            self.assertNotIn(key, data_block)
 
-        # Verify documented GitOps bootstrap path applies prerequisite-secrets.yaml before applicationset.yaml
+        # Verify documented GitOps bootstrap path creates namespace and applies prerequisite-secrets.yaml before applicationset.yaml
         repo_root = os.path.dirname(os.path.dirname(self.argocd_dir))
         readme_path = os.path.join(repo_root, "README.md")
         with open(readme_path, encoding="utf-8") as f:
             readme_text = f.read()
+        ns_step = "kubectl create namespace rag-inference-serving"
         secret_step = "kubectl apply -f deployments/argocd/prerequisite-secrets.yaml"
         appset_step = "kubectl apply -f deployments/argocd/applicationset.yaml"
+        self.assertIn(ns_step, readme_text)
         self.assertIn(secret_step, readme_text)
         self.assertIn(appset_step, readme_text)
+        self.assertLess(
+            readme_text.index(ns_step),
+            readme_text.index(secret_step),
+            "Documented GitOps bootstrap must create namespace before prerequisite-secrets.yaml",
+        )
         self.assertLess(
             readme_text.index(secret_step),
             readme_text.index(appset_step),

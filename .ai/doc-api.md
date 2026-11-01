@@ -766,8 +766,16 @@ $$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{nv\_infer
 
 ### D. GitOps ArgoCD Multi-Pool Continuous Delivery (`deployments/argocd/`)
 
-1. **Prerequisite Secrets (`deployments/argocd/prerequisite-secrets.yaml`)**:
-   - Applies sync-wave `0` (PreSync) Secret manifest ensuring the `rag-inference-secrets` resource is established prior to ApplicationSet deployment initialization. Sensitive core credentials (`HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `RAG_SERVING_API_KEY`) are excluded to avoid overwriting live credentials.
+1. **Namespace & Prerequisite Secrets (`deployments/argocd/prerequisite-secrets.yaml`)**:
+   - The target namespace `rag-inference-serving` must exist prior to applying secrets (`kubectl create namespace rag-inference-serving --dry-run=client -o yaml | kubectl apply -f -`).
+   - Applies sync-wave `0` (PreSync) Secret manifest ensuring the `rag-inference-secrets` resource is established prior to ApplicationSet deployment initialization.
+   - All runtime credentials (`HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `RAG_SERVING_API_KEY`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD`) are omitted from this manifest to avoid overwriting live credentials with empty strings.
+   - Deployment credential pre-validation in the CI/CD deploy pipeline strictly validates that all required secrets are set before `kubectl apply`, preserving existing cluster secrets if any credentials are missing.
+   - Kafka credentials (`KAFKA_SASL_USERNAME` and `KAFKA_SASL_PASSWORD`) must be provisioned before deploying the Batch Ingestion pool to satisfy KEDA `TriggerAuthentication` (`keda-triggerauth.yaml`).
+   - Required GitOps bootstrap apply ordering:
+     1. Namespace creation (`kubectl create namespace rag-inference-serving ...`)
+     2. Prerequisite secrets (`kubectl apply -f deployments/argocd/prerequisite-secrets.yaml`)
+     3. ApplicationSet controller sync (`kubectl apply -f deployments/argocd/applicationset.yaml`)
 
 2. **Declarative ApplicationSet (`deployments/argocd/applicationset.yaml`)**:
    - Uses list generators targeting `deployments/helm` with dedicated value overlays:
@@ -807,6 +815,7 @@ The microservice reads configuration parameters via Pydantic `ServingSettings` w
 | `RAG_SERVING_MODELS_EXPECTED` | `JSON array` | Pool-calibrated | List of initialized model engine names required for `/ready` probe to report ready status. |
 | `RAG_SERVING_SHM_BASE_PATH` | `string` | `/dev/shm` | Mount path for pod-scoped POSIX shared memory volume (`emptyDir` RAM mount). |
 | `RAG_SERVING_GRPC_TLS_ENABLED` | `boolean` | `false` | Enable TLS encryption on outbound gRPC client inference channels. |
+| `RAG_SERVING_GRPC_LOOPBACK_TLS_ENABLED` | `boolean` | `false` | Enable TLS encryption on pod-local loopback gRPC channel (defaults to false for plaintext loopback). |
 | `RAG_SERVING_GRPC_CA_CERT_PATH` | `string` | `null` | Filesystem path to root CA certificate verifying Triton server TLS certificates. |
 | `RAG_SERVING_GRPC_CLIENT_CERT_PATH` | `string` | `null` | Filesystem path to client public certificate for mutual TLS (mTLS) authentication. |
 | `RAG_SERVING_GRPC_CLIENT_KEY_PATH` | `string` | `null` | Filesystem path to client private key for mutual TLS (mTLS) authentication. |
