@@ -119,9 +119,11 @@ class TritonGRPCChannelPool:
         with self._lock:
             return len(self._channels)
 
-    def _create_channel(self, target: str, options: list[tuple[str, Any]]) -> grpc.Channel:
+    def _create_channel(
+        self, target: str, options: list[tuple[str, Any]], *, tls_enabled: bool
+    ) -> grpc.Channel:
         """Create a secure or insecure gRPC channel based on configured TLS settings."""
-        if self._settings.grpc_tls_enabled:
+        if tls_enabled:
             root_certs: bytes | None = None
             if self._settings.grpc_ca_cert_path:
                 with open(self._settings.grpc_ca_cert_path, "rb") as f:
@@ -176,7 +178,9 @@ class TritonGRPCChannelPool:
                         "status": "channel_created",
                     },
                 )
-                channel = self._create_channel(target, options)
+                channel = self._create_channel(
+                    target, options, tls_enabled=self._settings.grpc_tls_enabled
+                )
                 self._channels[pool_type] = channel
                 self._stubs[pool_type] = GRPCInferenceServiceStub(channel)
             return channel
@@ -216,7 +220,9 @@ class TritonGRPCChannelPool:
                 "Initializing loopback gRPC channel for pod-local operations",
                 extra={"target": target, "status": "loopback_channel_created"},
             )
-            channel = self._create_channel(target, options)
+            channel = self._create_channel(
+                target, options, tls_enabled=self._settings.grpc_loopback_tls_enabled
+            )
             self._loopback_channel = channel
             self._loopback_stub = GRPCInferenceServiceStub(channel)
 

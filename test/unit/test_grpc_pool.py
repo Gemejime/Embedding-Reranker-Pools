@@ -297,6 +297,59 @@ class TestTritonGRPCChannelPool(unittest.TestCase):
             pool.get_channel(PoolType.ONLINE_EMBEDDING)
         pool.close()
 
+    @patch("grpc.secure_channel")
+    @patch("grpc.insecure_channel")
+    def test_loopback_channel_defaults_to_plaintext_with_remote_tls(
+        self, mock_insecure: MagicMock, mock_secure: MagicMock
+    ) -> None:
+        mock_insecure.return_value = MagicMock()
+        mock_secure.return_value = MagicMock()
+
+        tls_settings = ServingSettings(
+            _env_file=None,
+            online_embed_grpc_url="embed-tls:8001",
+            triton_grpc_url="localhost:8001",
+            grpc_tls_enabled=True,
+            grpc_loopback_tls_enabled=False,
+        )
+        pool = TritonGRPCChannelPool(settings=tls_settings)
+
+        # Remote channel uses TLS
+        remote_chan = pool.get_channel(PoolType.ONLINE_EMBEDDING)
+        mock_secure.assert_called_once()
+        self.assertEqual(remote_chan, mock_secure.return_value)
+
+        # Loopback channel defaults to plaintext (insecure)
+        loopback_chan = pool.get_loopback_channel()
+        mock_insecure.assert_called_once_with("localhost:8001", options=DEFAULT_GRPC_OPTIONS)
+        self.assertEqual(loopback_chan, mock_insecure.return_value)
+
+        pool.close()
+
+    @patch("grpc.secure_channel")
+    @patch("grpc.insecure_channel")
+    def test_loopback_channel_respects_loopback_tls_enabled(
+        self, mock_insecure: MagicMock, mock_secure: MagicMock
+    ) -> None:
+        mock_insecure.return_value = MagicMock()
+        mock_secure.return_value = MagicMock()
+
+        tls_settings = ServingSettings(
+            _env_file=None,
+            triton_grpc_url="localhost:8001",
+            grpc_tls_enabled=False,
+            grpc_loopback_tls_enabled=True,
+        )
+        pool = TritonGRPCChannelPool(settings=tls_settings)
+
+        # Loopback channel uses TLS when grpc_loopback_tls_enabled is True
+        loopback_chan = pool.get_loopback_channel()
+        mock_secure.assert_called_once()
+        self.assertEqual(loopback_chan, mock_secure.return_value)
+        mock_insecure.assert_not_called()
+
+        pool.close()
+
 
 if __name__ == "__main__":
     unittest.main()
