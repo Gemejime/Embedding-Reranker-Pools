@@ -766,17 +766,20 @@ $$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{nv\_infer
 
 ### D. GitOps ArgoCD Multi-Pool Continuous Delivery (`deployments/argocd/`)
 
-1. **Declarative ApplicationSet (`deployments/argocd/applicationset.yaml`)**:
+1. **Prerequisite Secrets (`deployments/argocd/prerequisite-secrets.yaml`)**:
+   - Applies sync-wave `0` (PreSync) Secret manifest ensuring the `rag-inference-secrets` resource is established prior to ApplicationSet deployment initialization. Sensitive core credentials (`HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `RAG_SERVING_API_KEY`) are excluded to avoid overwriting live credentials.
+
+2. **Declarative ApplicationSet (`deployments/argocd/applicationset.yaml`)**:
    - Uses list generators targeting `deployments/helm` with dedicated value overlays:
      - `rag-inference-online-embedding` $\rightarrow$ `values-online-embed.yaml` (on-demand nodes)
      - `rag-inference-online-reranker` $\rightarrow$ `values-online-rerank.yaml` (on-demand nodes)
      - `rag-inference-batch-ingestion` $\rightarrow$ `values-batch-ingestion.yaml` (spot nodes)
    - Configures automated sync (`prune: true`, `selfHeal: true`), namespace creation (`CreateNamespace=true`), and health check status tracking for Triton probes (`/healthz`, `/ready`) and KEDA `ScaledObject` status.
 
-2. **Standalone Application CRDs**:
+3. **Standalone Application CRDs**:
    - `application-online-embed.yaml`, `application-online-rerank.yaml`, `application-batch-ingestion.yaml` for environment-specific deployments where ApplicationSet controller is not installed.
 
-3. **Canary Progressive Rollout & AnalysisTemplate (`deployments/argocd/`)**:
+4. **Canary Progressive Rollout & AnalysisTemplate (`deployments/argocd/`)**:
    - `rollout-canary.yaml`: Manages zero-downtime progressive rollouts of TensorRT FP16 engine updates (`model.plan`) with traffic shifting (20% $\rightarrow$ 50% $\rightarrow$ 100%) and automatic rollback upon error rate or latency breaches.
    - `analysistemplate.yaml`: Defines `triton-vram-and-latency-check` verifying Prometheus metrics (`nv_inference_request_success` and `nv_inference_queue_duration_us`) during progressive rollout steps.
 

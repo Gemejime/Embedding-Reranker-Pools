@@ -187,6 +187,14 @@
   - Expanded test suites to 112 passing tests across unit, integration, benchmark, and chaos suites with 100% clean mypy strict typing and ruff conformance.
   - Synchronized `.ai/doc-api.md`, bumped `api/openapi/openapi.json` to v1.2.0, and updated `.ai/progress-tracker.md`.
 
+- **CI/CD Pipeline Hardening, ArgoCD Bootstrap & gRPC TLS Deduplication Session**:
+  - Extracted duplicated TLS and insecure channel creation logic in `internal/client/grpc_pool.py` into a unified private helper `_create_channel()`, consolidating certificate loading, credential construction, and SNI target overrides across remote and loopback paths.
+  - Hardened ArgoCD prerequisite secret manifest `deployments/argocd/prerequisite-secrets.yaml` by removing empty placeholders for `HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `RAG_SERVING_API_KEY`, preventing live secret overwrites.
+  - Documented prerequisite secret bootstrap ordering in `README.md` (`prerequisite-secrets.yaml` before `applicationset.yaml`) and extended `test_prerequisite_secrets_manifest` in `test/unit/test_argocd_configs.py` to enforce this bootstrap invariant and assert exclusion of sensitive credentials.
+  - Completely purged `.env.prod` references from `.github/workflows/ci.yml`, replacing the skip-path drift check with a strictly validated CI non-sensitive comparison configuration (`.env.ci`) that fails if drift is detected.
+  - Added pre-validation of required deployment credentials (`HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `RAG_SERVING_API_KEY`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD`) in `.github/workflows/deploy.yml` prior to `kubectl apply`, ensuring missing credentials fail early without mutating live secrets.
+  - Updated `deployments/SECRET_MANAGEMENT.md` and `.ai/doc-api.md` to document the pre-validation and bootstrap prerequisites.
+
 - **Deployment Hardening, Headless Service Migration & CI Zero-Drift Session**:
   - Remediated loopback stub race condition in `internal/client/grpc_pool.py` by atomically securing channel/stub instantiation and validation under `_lock` in `_ensure_loopback_resources_locked()`, preventing clearing between retrieval and validation.
   - Hardened secret injection in `.github/workflows/deploy.yml` and `deployments/SECRET_MANAGEMENT.md` to serialize step-scoped credentials as JSON via Python before streaming to `kubectl apply -f -`, preserving quotes, backslashes, and special characters cleanly.

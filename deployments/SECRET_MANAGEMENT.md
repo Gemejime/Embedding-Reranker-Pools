@@ -59,9 +59,27 @@ flowchart LR
 
 ### Safe Injection Command (JSON Serialization via Python):
 
-To preserve quotes, backslashes, and special characters exactly without shell escaping bugs or heredoc interpolation errors, credentials are serialized directly to JSON and piped to `kubectl apply`:
+To prevent overwriting live working secrets with empty values and to preserve quotes, backslashes, and special characters exactly without shell escaping bugs, credentials are first validated and then serialized directly to JSON and piped to `kubectl apply`:
 
 ```bash
+# Validate credentials before modifying live secrets
+python3 -c '
+import os, sys
+required_keys = [
+    "HF_TOKEN",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "RAG_SERVING_API_KEY",
+    "KAFKA_SASL_USERNAME",
+    "KAFKA_SASL_PASSWORD",
+]
+missing = [k for k in required_keys if not os.environ.get(k)]
+if missing:
+    print(f"ERROR: Missing required secret credentials: {sorted(missing)}", file=sys.stderr)
+    sys.exit(1)
+'
+
+# Serialize and apply secret
 python3 -c '
 import json, os, sys
 secret = {
@@ -73,12 +91,12 @@ secret = {
     },
     "type": "Opaque",
     "stringData": {
-        "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
-        "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID", ""),
-        "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
-        "RAG_SERVING_API_KEY": os.environ.get("RAG_SERVING_API_KEY", ""),
-        "KAFKA_SASL_USERNAME": os.environ.get("KAFKA_SASL_USERNAME", ""),
-        "KAFKA_SASL_PASSWORD": os.environ.get("KAFKA_SASL_PASSWORD", ""),
+        "HF_TOKEN": os.environ["HF_TOKEN"],
+        "AWS_ACCESS_KEY_ID": os.environ["AWS_ACCESS_KEY_ID"],
+        "AWS_SECRET_ACCESS_KEY": os.environ["AWS_SECRET_ACCESS_KEY"],
+        "RAG_SERVING_API_KEY": os.environ["RAG_SERVING_API_KEY"],
+        "KAFKA_SASL_USERNAME": os.environ["KAFKA_SASL_USERNAME"],
+        "KAFKA_SASL_PASSWORD": os.environ["KAFKA_SASL_PASSWORD"],
     },
 }
 json.dump(secret, sys.stdout)

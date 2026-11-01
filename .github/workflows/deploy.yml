@@ -66,6 +66,23 @@ jobs:
           KAFKA_SASL_USERNAME: ${{ secrets.PROD_KAFKA_SASL_USERNAME }}
           KAFKA_SASL_PASSWORD: ${{ secrets.PROD_KAFKA_SASL_PASSWORD }}
         run: |
+          echo "Validating required credentials prior to updating cluster secrets..."
+          python3 -c '
+          import os, sys
+          required_keys = [
+              "HF_TOKEN",
+              "AWS_ACCESS_KEY_ID",
+              "AWS_SECRET_ACCESS_KEY",
+              "RAG_SERVING_API_KEY",
+              "KAFKA_SASL_USERNAME",
+              "KAFKA_SASL_PASSWORD",
+          ]
+          missing = [k for k in required_keys if not os.environ.get(k)]
+          if missing:
+              print(f"ERROR: Missing required secret credentials: {sorted(missing)}", file=sys.stderr)
+              sys.exit(1)
+          print("All required secret credentials successfully validated.")
+          '
           echo "Injecting runtime secrets for rag-inference-serving..."
           python3 -c '
           import json, os, sys
@@ -78,12 +95,12 @@ jobs:
               },
               "type": "Opaque",
               "stringData": {
-                  "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
-                  "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID", ""),
-                  "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
-                  "RAG_SERVING_API_KEY": os.environ.get("RAG_SERVING_API_KEY", ""),
-                  "KAFKA_SASL_USERNAME": os.environ.get("KAFKA_SASL_USERNAME", ""),
-                  "KAFKA_SASL_PASSWORD": os.environ.get("KAFKA_SASL_PASSWORD", ""),
+                  "HF_TOKEN": os.environ["HF_TOKEN"],
+                  "AWS_ACCESS_KEY_ID": os.environ["AWS_ACCESS_KEY_ID"],
+                  "AWS_SECRET_ACCESS_KEY": os.environ["AWS_SECRET_ACCESS_KEY"],
+                  "RAG_SERVING_API_KEY": os.environ["RAG_SERVING_API_KEY"],
+                  "KAFKA_SASL_USERNAME": os.environ["KAFKA_SASL_USERNAME"],
+                  "KAFKA_SASL_PASSWORD": os.environ["KAFKA_SASL_PASSWORD"],
               },
           }
           json.dump(secret, sys.stdout)

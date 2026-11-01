@@ -97,11 +97,45 @@ jobs:
 
       - name: Verify Environment and Deployment Drift Zero-State
         run: |
-          if [ -f ".env.prod" ]; then
-            python scripts/sync_env_to_deployments.py --check-only
-          else
-            echo "Notice: .env.prod is gitignored and absent in checkout; skipping deployment drift check."
-          fi
+          cat << 'EOF' > .env.ci
+          ENVIRONMENT=production
+          PYTHONUNBUFFERED=1
+          PYTHONDONTWRITEBYTECODE=1
+          RAG_SERVING_POOL_TYPE=online_embedding
+          RAG_SERVING_SERVER_HOST=0.0.0.0
+          RAG_SERVING_SERVER_PORT=8080
+          RAG_SERVING_TRITON_HTTP_URL=http://127.0.0.1:8000
+          RAG_SERVING_TRITON_GRPC_URL=127.0.0.1:8001
+          RAG_SERVING_ONLINE_EMBED_GRPC_URL=dns:///rag-inference-online-embedding-headless.rag-inference-serving.svc.cluster.local:8001
+          RAG_SERVING_ONLINE_RERANK_GRPC_URL=dns:///rag-inference-online-reranker-headless.rag-inference-serving.svc.cluster.local:8001
+          RAG_SERVING_BATCH_INGEST_GRPC_URL=dns:///rag-inference-batch-ingestion-headless.rag-inference-serving.svc.cluster.local:8001
+          RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS=2000
+          RAG_SERVING_MAX_BATCH_SIZE=32
+          RAG_SERVING_VRAM_CAPACITY_BYTES=25769803776
+          RAG_SERVING_MAX_STATIC_VRAM_BYTES=21474836480
+          RAG_SERVING_VRAM_MAX_UTILIZATION_RATIO=0.85
+          RAG_SERVING_SHM_BASE_PATH=/dev/shm
+          RAG_SERVING_GRPC_TLS_ENABLED=false
+          RAG_SERVING_GRPC_CA_CERT_PATH=
+          RAG_SERVING_GRPC_CLIENT_CERT_PATH=
+          RAG_SERVING_GRPC_CLIENT_KEY_PATH=
+          RAG_SERVING_GRPC_SERVER_NAME_OVERRIDE=
+          RAG_SERVING_LOG_LEVEL=INFO
+          PROMETHEUS_SERVER_ADDRESS=http://prometheus-k8s.monitoring.svc:9090
+          KAFKA_BOOTSTRAP_SERVERS=kafka.event-streaming.svc:9092
+          KAFKA_CONSUMER_GROUP=rag-batch-embedder-group
+          KAFKA_TOPIC=rag.ingestion.chunks
+          KAFKA_SASL_MECHANISM=SCRAM-SHA-512
+          KAFKA_SECURITY_PROTOCOL=SASL_SSL
+          KAFKA_SSL_CA_LOCATION=/etc/ssl/certs/kafka-ca.crt
+          AWS_DEFAULT_REGION=us-east-1
+          AWS_ENDPOINT_URL=
+          MODEL_REGISTRY_STORAGE_URI=s3://rag-model-cache/tensorrt-engines/
+          MODEL_REPOSITORY=/models
+          TRITON_ARGS="--strict-model-config=true --log-verbose=0"
+          LIVE_TRITON=0
+          EOF
+          python scripts/sync_env_to_deployments.py --env-file .env.ci --check-only
 
   triton-config-lint:
     name: Triton Model Repository & Config Lint
