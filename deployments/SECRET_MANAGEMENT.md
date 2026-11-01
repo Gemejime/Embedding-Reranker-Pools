@@ -12,7 +12,7 @@ To ensure zero credential leakage and adhere to enterprise compliance, runtime c
 
    - Sourced directly from `.env.prod`.
    - Synchronized to `deployments/helm/values.yaml` via `python scripts/sync_env_to_deployments.py --sync`.
-   - Enforced by pre-commit hooks and GitHub Actions CI drift verification (`--check-only`).
+   - Enforced by developer pre-commit hooks (`.git/hooks/pre-commit`) and manual verification (`python scripts/sync_env_to_deployments.py --check-only`).
    - Pods restart automatically via `checksum/config` sha256 annotation in `deployments/helm/templates/deployment.yaml`.
 2. **Sensitive Credentials (Kubernetes Secret)**:
 
