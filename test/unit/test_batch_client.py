@@ -23,6 +23,7 @@ class TestBatchClient(unittest.TestCase):
         self.mock_pool = MagicMock()
         self.mock_batch_stub = MagicMock()
         self.mock_pool.get_stub.return_value = self.mock_batch_stub
+        self.mock_pool.get_loopback_stub.return_value = self.mock_batch_stub
 
         self.client = BatchIngestionClient(
             pool=self.mock_pool,
@@ -192,6 +193,35 @@ class TestBatchClient(unittest.TestCase):
         self.assertEqual(stub_old.ModelInfer.call_count, 1)
         self.assertEqual(stub_new.ModelInfer.call_count, 2)
         self.mock_pool.reconnect_channel.assert_called_once()
+
+    @patch("internal.client.batch_client.SharedMemoryRegion")
+    def test_shm_uses_dedicated_loopback_stub(self, mock_shm_class: MagicMock) -> None:
+        mock_region = MagicMock()
+        mock_region.name = "rag_batch_in_loopback"
+        mock_region.key = "/rag_batch_in_loopback"
+        mock_shm_class.return_value = mock_region
+
+        loopback_stub = MagicMock()
+        remote_stub = MagicMock()
+        self.mock_pool.get_loopback_stub.return_value = loopback_stub
+        self.mock_pool.get_stub.return_value = remote_stub
+
+        out_bytes = pack_fp16_tensor([[0.5] * 768])
+        loopback_stub.SystemSharedMemoryRegister.return_value = SystemSharedMemoryRegisterResponse()
+        loopback_stub.SystemSharedMemoryUnregister.return_value = (
+            SystemSharedMemoryUnregisterResponse()
+        )
+        loopback_stub.ModelInfer.return_value = ModelInferResponse(
+            model_name="batch_embedder_ensemble",
+            outputs=[InferOutputTensor(name="embeddings", shape=[1, 768], datatype="FP16")],
+            raw_output_contents=[out_bytes],
+        )
+
+        self.client.embed_chunks(["chunk 1"], target_host="localhost", use_shm=True)
+        self.mock_pool.get_loopback_stub.assert_called_once()
+        self.mock_pool.get_stub.assert_not_called()
+        loopback_stub.SystemSharedMemoryRegister.assert_called_once()
+        loopback_stub.ModelInfer.assert_called_once()
 
 
 if __name__ == "__main__":

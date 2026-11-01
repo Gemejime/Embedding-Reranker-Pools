@@ -22,16 +22,19 @@ spec:
             valuesFile: values-online-embed.yaml
             namespace: rag-inference-serving
             nodeLifecycle: on-demand
+            secretName: rag-inference-secrets
           - pool: online-reranker
             name: rag-inference-online-reranker
             valuesFile: values-online-rerank.yaml
             namespace: rag-inference-serving
             nodeLifecycle: on-demand
+            secretName: rag-inference-secrets
           - pool: batch-ingestion
             name: rag-inference-batch-ingestion
             valuesFile: values-batch-ingestion.yaml
             namespace: rag-inference-serving
             nodeLifecycle: spot
+            secretName: rag-inference-secrets
   template:
     metadata:
       name: "{{.name}}"
@@ -51,6 +54,9 @@ spec:
           valueFiles:
             - values.yaml
             - "{{.valuesFile}}"
+          parameters:
+            - name: env.secretName
+              value: "{{.secretName}}"
       destination:
         server: https://kubernetes.default.svc
         namespace: "{{.namespace}}"

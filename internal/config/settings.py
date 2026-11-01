@@ -136,6 +136,10 @@ class ServingSettings(BaseSettings):
         default=False,
         description="Enable TLS encryption for outbound gRPC client channels.",
     )
+    grpc_loopback_tls_enabled: bool = Field(
+        default=False,
+        description="Enable TLS encryption for pod-local loopback gRPC channel (defaults to False for plaintext loopback).",
+    )
     grpc_ca_cert_path: str | None = Field(
         default=None,
         description="Filesystem path to root CA certificate for verifying TLS server certificates.",

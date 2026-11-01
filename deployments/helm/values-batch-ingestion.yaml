@@ -49,6 +49,19 @@ autoscaling:
         topic: rag.ingestion.chunks
         consumerGroup: rag-batch-embedder-group
         lagThreshold: "10000"
+        sasl: scram_sha512
+        tls: enable
+      authenticationRef:
+        name: rag-inference-batch-keda-auth
+  triggerAuthentication:
+    name: rag-inference-batch-keda-auth
+    secretTargetRef:
+      - parameter: username
+        name: rag-inference-secrets
+        key: KAFKA_SASL_USERNAME
+      - parameter: password
+        name: rag-inference-secrets
+        key: KAFKA_SASL_PASSWORD
 
 alerts:
   warningBacklogChunks: "500000"  # Warning alert when backlog exceeds 500,000 chunks at 16 spot node ceiling

@@ -9,7 +9,10 @@
 set -euo pipefail
 
 MODEL_REPOSITORY="${MODEL_REPOSITORY:-/models}"
-TRITON_ARGS="${TRITON_ARGS:---model-repository=${MODEL_REPOSITORY} --strict-model-config=true --log-verbose=0}"
+TRITON_ARGS="${TRITON_ARGS:---strict-model-config=true --log-verbose=0}"
+if [[ " ${TRITON_ARGS} " != *" --model-repository="* ]]; then
+    TRITON_ARGS="--model-repository=${MODEL_REPOSITORY} ${TRITON_ARGS}"
+fi
 PROBE_SERVER_HOST="${RAG_SERVING_SERVER_HOST:-0.0.0.0}"
 PROBE_SERVER_PORT="${RAG_SERVING_SERVER_PORT:-8080}"
 

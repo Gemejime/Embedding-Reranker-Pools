@@ -766,17 +766,28 @@ $$\text{Avg Queue Delay } (\mu\text{s}) = \frac{\sum(\text{rate}(\text{nv\_infer
 
 ### D. GitOps ArgoCD Multi-Pool Continuous Delivery (`deployments/argocd/`)
 
-1. **Declarative ApplicationSet (`deployments/argocd/applicationset.yaml`)**:
+1. **Namespace & Prerequisite Secrets (`deployments/argocd/prerequisite-secrets.yaml`)**:
+   - The target namespace `rag-inference-serving` must exist prior to applying secrets (`kubectl create namespace rag-inference-serving --dry-run=client -o yaml | kubectl apply -f -`).
+   - Applies sync-wave `0` (PreSync) Secret manifest ensuring the `rag-inference-secrets` resource is established prior to ApplicationSet deployment initialization.
+   - All runtime credentials (`HF_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `RAG_SERVING_API_KEY`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD`) are omitted from this manifest to avoid overwriting live credentials with empty strings.
+   - Deployment credential pre-validation in the CI/CD deploy pipeline strictly validates that all required secrets are set before `kubectl apply`, preserving existing cluster secrets if any credentials are missing.
+   - Kafka credentials (`KAFKA_SASL_USERNAME` and `KAFKA_SASL_PASSWORD`) must be provisioned before deploying the Batch Ingestion pool to satisfy KEDA `TriggerAuthentication` (`keda-triggerauth.yaml`).
+   - Required GitOps bootstrap apply ordering:
+     1. Namespace creation (`kubectl create namespace rag-inference-serving ...`)
+     2. Prerequisite secrets (`kubectl apply -f deployments/argocd/prerequisite-secrets.yaml`)
+     3. ApplicationSet controller sync (`kubectl apply -f deployments/argocd/applicationset.yaml`)
+
+2. **Declarative ApplicationSet (`deployments/argocd/applicationset.yaml`)**:
    - Uses list generators targeting `deployments/helm` with dedicated value overlays:
      - `rag-inference-online-embedding` $\rightarrow$ `values-online-embed.yaml` (on-demand nodes)
      - `rag-inference-online-reranker` $\rightarrow$ `values-online-rerank.yaml` (on-demand nodes)
      - `rag-inference-batch-ingestion` $\rightarrow$ `values-batch-ingestion.yaml` (spot nodes)
    - Configures automated sync (`prune: true`, `selfHeal: true`), namespace creation (`CreateNamespace=true`), and health check status tracking for Triton probes (`/healthz`, `/ready`) and KEDA `ScaledObject` status.
 
-2. **Standalone Application CRDs**:
+3. **Standalone Application CRDs**:
    - `application-online-embed.yaml`, `application-online-rerank.yaml`, `application-batch-ingestion.yaml` for environment-specific deployments where ApplicationSet controller is not installed.
 
-3. **Canary Progressive Rollout & AnalysisTemplate (`deployments/argocd/`)**:
+4. **Canary Progressive Rollout & AnalysisTemplate (`deployments/argocd/`)**:
    - `rollout-canary.yaml`: Manages zero-downtime progressive rollouts of TensorRT FP16 engine updates (`model.plan`) with traffic shifting (20% $\rightarrow$ 50% $\rightarrow$ 100%) and automatic rollback upon error rate or latency breaches.
    - `analysistemplate.yaml`: Defines `triton-vram-and-latency-check` verifying Prometheus metrics (`nv_inference_request_success` and `nv_inference_queue_duration_us`) during progressive rollout steps.
 
@@ -791,11 +802,11 @@ The microservice reads configuration parameters via Pydantic `ServingSettings` w
 | `RAG_SERVING_POOL_TYPE` | `string` | `online_embedding` | Hardware compute pool identity: `online_embedding`, `online_reranker`, `batch_ingestion`. |
 | `RAG_SERVING_SERVER_HOST` | `string` | `0.0.0.0` | Bind host interface for out-of-band operational ASGI server. |
 | `RAG_SERVING_SERVER_PORT` | `integer` | `8080` | HTTP port for operational server hosting `/healthz`, `/ready`, `/metrics`, `/docs`, `/redoc`, `/api/docs`, `/openapi.json`. |
-| `RAG_SERVING_TRITON_HTTP_URL` | `string` | `http://localhost:8000` | Internal Triton HTTP endpoint for KServe v2 health and readiness checks. |
-| `RAG_SERVING_TRITON_GRPC_URL` | `string` | `localhost:8001` | Internal Triton gRPC endpoint for KServe v2 binary tensor inference. |
-| `RAG_SERVING_ONLINE_EMBED_GRPC_URL` | `string` | `localhost:8001` | Upstream channel target for Online Embedding Pool (Pool A: NVIDIA L4/A10G On-Demand). |
-| `RAG_SERVING_ONLINE_RERANK_GRPC_URL` | `string` | `localhost:8001` | Upstream channel target for Online Reranker Pool (Pool B: NVIDIA L4/A10G On-Demand). |
-| `RAG_SERVING_BATCH_INGEST_GRPC_URL` | `string` | `localhost:8001` | Upstream channel target for Batch Ingestion Pool (Preemptible Spot Nodes). |
+| `RAG_SERVING_TRITON_HTTP_URL` | `string` | `http://localhost:8000` | Internal pod-local Triton HTTP endpoint for KServe v2 health and readiness probes (runtime default: `http://localhost:8000`). |
+| `RAG_SERVING_TRITON_GRPC_URL` | `string` | `localhost:8001` | Internal pod-local Triton gRPC endpoint for KServe v2 binary tensor inference (runtime default: `localhost:8001`). Also serves as fallback for empty pool targets. |
+| `RAG_SERVING_ONLINE_EMBED_GRPC_URL` | `string` | `""` (inherits `triton_grpc_url`) | Channel target for Online Embedding Pool (Pool A: NVIDIA L4/A10G On-Demand). Runtime default is empty string which inherits `triton_grpc_url` (`localhost:8001`). Kubernetes deployment value uses gRPC DNS round-robin (`dns:///rag-inference-online-embedding-headless.rag-inference-serving.svc.cluster.local:8001`). |
+| `RAG_SERVING_ONLINE_RERANK_GRPC_URL` | `string` | `""` (inherits `triton_grpc_url`) | Channel target for Online Reranker Pool (Pool B: NVIDIA L4/A10G On-Demand). Runtime default is empty string which inherits `triton_grpc_url` (`localhost:8001`). Kubernetes deployment value uses gRPC DNS round-robin (`dns:///rag-inference-online-reranker-headless.rag-inference-serving.svc.cluster.local:8001`). |
+| `RAG_SERVING_BATCH_INGEST_GRPC_URL` | `string` | `""` (inherits `triton_grpc_url`) | Channel target for Batch Ingestion Pool (Preemptible Spot Nodes). Runtime default is empty string which inherits `triton_grpc_url` (`localhost:8001`). Kubernetes deployment value uses gRPC DNS round-robin (`dns:///rag-inference-batch-ingestion-headless.rag-inference-serving.svc.cluster.local:8001`). |
 | `RAG_SERVING_MAX_QUEUE_DELAY_MICROSECONDS` | `integer` | Pool-calibrated | Triton queue delay timeout in $\mu s$ (`2000` for online embedding, `4000` for online reranker, `50000` for batch ingestion). |
 | `RAG_SERVING_MAX_BATCH_SIZE` | `integer` | Pool-calibrated | Dynamic batch size ceiling (`32` for online embedding/reranker, `256` for batch ingestion). |
 | `RAG_SERVING_VRAM_CAPACITY_BYTES` | `integer` | `25769803776` | Total GPU VRAM capacity in bytes (24 GiB NVIDIA L4/A10G memory layout). |
@@ -804,6 +815,7 @@ The microservice reads configuration parameters via Pydantic `ServingSettings` w
 | `RAG_SERVING_MODELS_EXPECTED` | `JSON array` | Pool-calibrated | List of initialized model engine names required for `/ready` probe to report ready status. |
 | `RAG_SERVING_SHM_BASE_PATH` | `string` | `/dev/shm` | Mount path for pod-scoped POSIX shared memory volume (`emptyDir` RAM mount). |
 | `RAG_SERVING_GRPC_TLS_ENABLED` | `boolean` | `false` | Enable TLS encryption on outbound gRPC client inference channels. |
+| `RAG_SERVING_GRPC_LOOPBACK_TLS_ENABLED` | `boolean` | `false` | Enable TLS encryption on pod-local loopback gRPC channel (defaults to false for plaintext loopback). |
 | `RAG_SERVING_GRPC_CA_CERT_PATH` | `string` | `null` | Filesystem path to root CA certificate verifying Triton server TLS certificates. |
 | `RAG_SERVING_GRPC_CLIENT_CERT_PATH` | `string` | `null` | Filesystem path to client public certificate for mutual TLS (mTLS) authentication. |
 | `RAG_SERVING_GRPC_CLIENT_KEY_PATH` | `string` | `null` | Filesystem path to client private key for mutual TLS (mTLS) authentication. |
@@ -827,7 +839,7 @@ The microservice reads configuration parameters via Pydantic `ServingSettings` w
 | `AWS_ENDPOINT_URL` | `string` | `null` | Custom S3 / MinIO / Ceph endpoint URL for cloud-native model engine caches. |
 | `MODEL_REGISTRY_STORAGE_URI` | `string` | `s3://rag-model-cache/tensorrt-engines/` | Artifact storage URI containing precompiled TensorRT model engines. |
 | `MODEL_REPOSITORY` | `string` | `/models` | Directory path containing compiled Triton model repositories. |
-| `TRITON_ARGS` | `string` | `--model-repository=/models --strict-model-config=true --log-verbose=0` | Process supervisor startup flags for `tritonserver`. |
+| `TRITON_ARGS` | `string` | `--strict-model-config=true --log-verbose=0` | Process supervisor startup flags for `tritonserver`. The entrypoint script automatically constructs `--model-repository=${MODEL_REPOSITORY}` unless already specified. |
 | `PYTHONUNBUFFERED` | `integer` | `1` | Forces unbuffered stdout/stderr output for real-time JSON log shipping. |
 | `PYTHONDONTWRITEBYTECODE` | `integer` | `1` | Prevents writing `.pyc` files inside containers. |
 | `LIVE_TRITON` | `integer` | `0` | Controls live vs. dry-run Triton execution during automated benchmark sweeps (`0` = mock, `1` = live). |

@@ -128,7 +128,9 @@ class TestSingleNodeEmbeddingSweep(unittest.TestCase):
             cls.server.stop(grace=0)
 
     def setUp(self) -> None:
-        self.pool = TritonGRPCChannelPool(batch_target=self.server_target)
+        self.pool = TritonGRPCChannelPool(
+            batch_target=self.server_target, loopback_target=self.server_target
+        )
         self.client = BatchIngestionClient(pool=self.pool, max_batch_size=256)
 
     def tearDown(self) -> None:

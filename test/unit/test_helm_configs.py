@@ -26,6 +26,9 @@ class TestHelmConfigs(unittest.TestCase):
         self.assertTrue(data["modelStorage"]["readOnly"])
         self.assertEqual(data["service"]["operationalPort"], 8080)
         self.assertEqual(data["service"]["grpcPort"], 8001)
+        self.assertEqual(data["service"]["type"], "ClusterIP")
+        self.assertTrue(data["service"]["headless"]["enabled"])
+        self.assertEqual(data["service"]["headless"]["nameSuffix"], "-headless")
         trigger = data["autoscaling"]["triggers"][0]
         self.assertEqual(trigger["metadata"]["metricName"], "nv_inference_queue_duration_us")
         self.assertIn("nv_inference_queue_duration_us", trigger["metadata"]["query"])
@@ -72,6 +75,38 @@ class TestHelmConfigs(unittest.TestCase):
         tolerations = [t["key"] for t in data.get("tolerations", [])]
         self.assertIn("spotInstance", tolerations)
         self.assertEqual(data["alerts"]["warningBacklogChunks"], "500000")
+        trigger = data["autoscaling"]["triggers"][0]
+        self.assertEqual(trigger["metadata"]["sasl"], "scram_sha512")
+        self.assertEqual(trigger["metadata"]["tls"], "enable")
+        self.assertEqual(trigger["authenticationRef"]["name"], "rag-inference-batch-keda-auth")
+        self.assertEqual(
+            data["autoscaling"]["triggerAuthentication"]["name"],
+            "rag-inference-batch-keda-auth",
+        )
+
+    def test_deployment_template_annotations_and_secret_ref(self) -> None:
+        deployment_path = os.path.join(self.helm_dir, "templates", "deployment.yaml")
+        with open(deployment_path, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("checksum/config", content)
+        self.assertIn("checksum/secret", content)
+        self.assertIn(".Values.env.secretName", content)
+        self.assertIn("secretRef:", content)
+
+    def test_service_template_headless_and_primary(self) -> None:
+        service_path = os.path.join(self.helm_dir, "templates", "service.yaml")
+        with open(service_path, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("name: {{ .Release.Name }}", content)
+        self.assertIn(".Values.service.headless.enabled", content)
+        self.assertIn("clusterIP: None", content)
+
+    def test_keda_triggerauth_template(self) -> None:
+        auth_path = os.path.join(self.helm_dir, "templates", "keda-triggerauth.yaml")
+        with open(auth_path, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("kind: TriggerAuthentication", content)
+        self.assertIn(".Values.autoscaling.triggerAuthentication", content)
 
 
 if __name__ == "__main__":

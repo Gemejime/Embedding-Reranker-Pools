@@ -33,14 +33,62 @@ class TestArgoCDConfigs(unittest.TestCase):
         self.assertEqual(pools["online-embedding"]["nodeLifecycle"], "on-demand")
         self.assertEqual(pools["online-reranker"]["nodeLifecycle"], "on-demand")
         self.assertEqual(pools["batch-ingestion"]["nodeLifecycle"], "spot")
+        self.assertEqual(pools["online-embedding"]["secretName"], "rag-inference-secrets")
+        self.assertEqual(pools["online-reranker"]["secretName"], "rag-inference-secrets")
+        self.assertEqual(pools["batch-ingestion"]["secretName"], "rag-inference-secrets")
 
-        # Verify Helm path and sync policy
+        # Verify Helm path, parameters, and sync policy
         template = data["spec"]["template"]["spec"]
         self.assertEqual(template["source"]["path"], "deployments/helm")
         self.assertEqual(template["source"]["targetRevision"], "main")
+        params = {p["name"]: p["value"] for p in template["source"]["helm"].get("parameters", [])}
+        self.assertEqual(params.get("env.secretName"), "{{.secretName}}")
         self.assertTrue(template["syncPolicy"]["automated"]["prune"])
         self.assertTrue(template["syncPolicy"]["automated"]["selfHeal"])
         self.assertIn("CreateNamespace=true", template["syncPolicy"]["syncOptions"])
+
+    def test_prerequisite_secrets_manifest(self) -> None:
+        secret_path = os.path.join(self.argocd_dir, "prerequisite-secrets.yaml")
+        with open(secret_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        self.assertEqual(data["kind"], "Secret")
+        self.assertEqual(data["metadata"]["name"], "rag-inference-secrets")
+        self.assertEqual(data["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"], "0")
+        string_data = data.get("stringData", {})
+        data_block = data.get("data", {})
+        # Verify sensitive working credentials are not overwritten by empty placeholders
+        for key in [
+            "HF_TOKEN",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "RAG_SERVING_API_KEY",
+            "KAFKA_SASL_USERNAME",
+            "KAFKA_SASL_PASSWORD",
+        ]:
+            self.assertNotIn(key, string_data)
+            self.assertNotIn(key, data_block)
+
+        # Verify documented GitOps bootstrap path creates namespace and applies prerequisite-secrets.yaml before applicationset.yaml
+        repo_root = os.path.dirname(os.path.dirname(self.argocd_dir))
+        readme_path = os.path.join(repo_root, "README.md")
+        with open(readme_path, encoding="utf-8") as f:
+            readme_text = f.read()
+        ns_step = "kubectl create namespace rag-inference-serving"
+        secret_step = "kubectl apply -f deployments/argocd/prerequisite-secrets.yaml"
+        appset_step = "kubectl apply -f deployments/argocd/applicationset.yaml"
+        self.assertIn(ns_step, readme_text)
+        self.assertIn(secret_step, readme_text)
+        self.assertIn(appset_step, readme_text)
+        self.assertLess(
+            readme_text.index(ns_step),
+            readme_text.index(secret_step),
+            "Documented GitOps bootstrap must create namespace before prerequisite-secrets.yaml",
+        )
+        self.assertLess(
+            readme_text.index(secret_step),
+            readme_text.index(appset_step),
+            "Documented GitOps bootstrap must apply prerequisite-secrets.yaml before applicationset.yaml",
+        )
 
     def test_standalone_application_online_embed(self) -> None:
         path = os.path.join(self.argocd_dir, "application-online-embed.yaml")
