@@ -119,6 +119,37 @@ class TritonGRPCChannelPool:
         with self._lock:
             return len(self._channels)
 
+    def _create_channel(self, target: str, options: list[tuple[str, Any]]) -> grpc.Channel:
+        """Create a secure or insecure gRPC channel based on configured TLS settings."""
+        if self._settings.grpc_tls_enabled:
+            root_certs: bytes | None = None
+            if self._settings.grpc_ca_cert_path:
+                with open(self._settings.grpc_ca_cert_path, "rb") as f:
+                    root_certs = f.read()
+            private_key: bytes | None = None
+            cert_chain: bytes | None = None
+            if self._settings.grpc_client_key_path and self._settings.grpc_client_cert_path:
+                with open(self._settings.grpc_client_key_path, "rb") as f:
+                    private_key = f.read()
+                with open(self._settings.grpc_client_cert_path, "rb") as f:
+                    cert_chain = f.read()
+
+            credentials = grpc.ssl_channel_credentials(
+                root_certificates=root_certs,
+                private_key=private_key,
+                certificate_chain=cert_chain,
+            )
+            channel_options = list(options)
+            if self._settings.grpc_server_name_override:
+                channel_options.append(
+                    (
+                        "grpc.ssl_target_name_override",
+                        self._settings.grpc_server_name_override,
+                    )
+                )
+            return grpc.secure_channel(target, credentials, options=channel_options)
+        return grpc.insecure_channel(target, options=options)
+
     def get_channel(self, pool_type: PoolType) -> grpc.Channel:
         """Lazily instantiate and return a thread-safe gRPC channel for the compute pool."""
         if self._closed:
@@ -145,34 +176,7 @@ class TritonGRPCChannelPool:
                         "status": "channel_created",
                     },
                 )
-                if self._settings.grpc_tls_enabled:
-                    root_certs: bytes | None = None
-                    if self._settings.grpc_ca_cert_path:
-                        with open(self._settings.grpc_ca_cert_path, "rb") as f:
-                            root_certs = f.read()
-                    private_key: bytes | None = None
-                    cert_chain: bytes | None = None
-                    if self._settings.grpc_client_key_path and self._settings.grpc_client_cert_path:
-                        with open(self._settings.grpc_client_key_path, "rb") as f:
-                            private_key = f.read()
-                        with open(self._settings.grpc_client_cert_path, "rb") as f:
-                            cert_chain = f.read()
-
-                    credentials = grpc.ssl_channel_credentials(
-                        root_certificates=root_certs,
-                        private_key=private_key,
-                        certificate_chain=cert_chain,
-                    )
-                    if self._settings.grpc_server_name_override:
-                        options.append(
-                            (
-                                "grpc.ssl_target_name_override",
-                                self._settings.grpc_server_name_override,
-                            )
-                        )
-                    channel = grpc.secure_channel(target, credentials, options=options)
-                else:
-                    channel = grpc.insecure_channel(target, options=options)
+                channel = self._create_channel(target, options)
                 self._channels[pool_type] = channel
                 self._stubs[pool_type] = GRPCInferenceServiceStub(channel)
             return channel
@@ -212,34 +216,7 @@ class TritonGRPCChannelPool:
                 "Initializing loopback gRPC channel for pod-local operations",
                 extra={"target": target, "status": "loopback_channel_created"},
             )
-            if self._settings.grpc_tls_enabled:
-                root_certs: bytes | None = None
-                if self._settings.grpc_ca_cert_path:
-                    with open(self._settings.grpc_ca_cert_path, "rb") as f:
-                        root_certs = f.read()
-                private_key: bytes | None = None
-                cert_chain: bytes | None = None
-                if self._settings.grpc_client_key_path and self._settings.grpc_client_cert_path:
-                    with open(self._settings.grpc_client_key_path, "rb") as f:
-                        private_key = f.read()
-                    with open(self._settings.grpc_client_cert_path, "rb") as f:
-                        cert_chain = f.read()
-
-                credentials = grpc.ssl_channel_credentials(
-                    root_certificates=root_certs,
-                    private_key=private_key,
-                    certificate_chain=cert_chain,
-                )
-                if self._settings.grpc_server_name_override:
-                    options.append(
-                        (
-                            "grpc.ssl_target_name_override",
-                            self._settings.grpc_server_name_override,
-                        )
-                    )
-                channel = grpc.secure_channel(target, credentials, options=options)
-            else:
-                channel = grpc.insecure_channel(target, options=options)
+            channel = self._create_channel(target, options)
             self._loopback_channel = channel
             self._loopback_stub = GRPCInferenceServiceStub(channel)
 

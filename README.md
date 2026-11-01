@@ -267,8 +267,9 @@ threshold: "3000"  # 3 ms trigger threshold
 ```
 
 ### GitOps ArgoCD ApplicationSet
-Continuous delivery is declaratively managed across the 3 decoupled pools using ArgoCD:
+Continuous delivery is declaratively managed across the 3 decoupled pools using ArgoCD. Apply prerequisite secrets before the ApplicationSet to ensure required Secret resources exist prior to deployment initialization:
 ```bash
+kubectl apply -f deployments/argocd/prerequisite-secrets.yaml
 kubectl apply -f deployments/argocd/applicationset.yaml
 ```
 Deploys:

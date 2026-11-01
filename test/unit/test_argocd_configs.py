@@ -54,8 +54,28 @@ class TestArgoCDConfigs(unittest.TestCase):
         self.assertEqual(data["kind"], "Secret")
         self.assertEqual(data["metadata"]["name"], "rag-inference-secrets")
         self.assertEqual(data["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"], "0")
-        self.assertIn("HF_TOKEN", data["stringData"])
-        self.assertIn("KAFKA_SASL_PASSWORD", data["stringData"])
+        string_data = data.get("stringData", {})
+        # Verify sensitive working credentials are not overwritten by empty placeholders
+        self.assertNotIn("HF_TOKEN", string_data)
+        self.assertNotIn("AWS_ACCESS_KEY_ID", string_data)
+        self.assertNotIn("AWS_SECRET_ACCESS_KEY", string_data)
+        self.assertNotIn("RAG_SERVING_API_KEY", string_data)
+        self.assertIn("KAFKA_SASL_PASSWORD", string_data)
+
+        # Verify documented GitOps bootstrap path applies prerequisite-secrets.yaml before applicationset.yaml
+        repo_root = os.path.dirname(os.path.dirname(self.argocd_dir))
+        readme_path = os.path.join(repo_root, "README.md")
+        with open(readme_path, encoding="utf-8") as f:
+            readme_text = f.read()
+        secret_step = "kubectl apply -f deployments/argocd/prerequisite-secrets.yaml"
+        appset_step = "kubectl apply -f deployments/argocd/applicationset.yaml"
+        self.assertIn(secret_step, readme_text)
+        self.assertIn(appset_step, readme_text)
+        self.assertLess(
+            readme_text.index(secret_step),
+            readme_text.index(appset_step),
+            "Documented GitOps bootstrap must apply prerequisite-secrets.yaml before applicationset.yaml",
+        )
 
     def test_standalone_application_online_embed(self) -> None:
         path = os.path.join(self.argocd_dir, "application-online-embed.yaml")
