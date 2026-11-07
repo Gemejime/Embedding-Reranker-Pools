@@ -34,11 +34,11 @@ Configure the following secrets in **GitHub Repository Settings &rarr; Secrets a
 | `PROD_AWS_ACCESS_KEY_ID`     | Storage access key for AWS S3, MinIO, or Cloudflare R2                 | `AWS_ACCESS_KEY_ID`            |
 | `PROD_AWS_SECRET_ACCESS_KEY` | Storage secret key for AWS S3, MinIO, or Cloudflare R2                 | `AWS_SECRET_ACCESS_KEY`        |
 | `PROD_RAG_SERVING_API_KEY`   | Bearer token securing administrative endpoints (`/metrics`)          | `RAG_SERVING_API_KEY`          |
-| `PROD_KAFKA_SASL_USERNAME`   | Username for Kafka SCRAM-SHA-512 authentication (KEDA triggers)        | `KAFKA_SASL_USERNAME`          |
-| `PROD_KAFKA_SASL_PASSWORD`   | Password for Kafka SCRAM-SHA-512 authentication (KEDA triggers)        | `KAFKA_SASL_PASSWORD`          |
+| `PROD_KAFKA_SASL_USERNAME`   | Confluent Cloud API Key (SASL/PLAIN) for Kafka backlog lag monitoring  | `KAFKA_SASL_USERNAME`          |
+| `PROD_KAFKA_SASL_PASSWORD`   | Confluent Cloud API Secret (SASL/PLAIN) for Kafka backlog lag monitoring| `KAFKA_SASL_PASSWORD`          |
 
 > [!IMPORTANT]
-> **KEDA Kafka Trigger Authentication**: Injecting `KAFKA_SASL_PASSWORD` into the worker pod environment alone does **not** provide credentials to KEDA. The KEDA operator runs as an external controller in its own namespace and queries Kafka broker lag independently. KEDA requires explicit authentication configured via a `TriggerAuthentication` resource that references `KAFKA_SASL_USERNAME` and `KAFKA_SASL_PASSWORD` from `rag-inference-secrets`, coupled with `sasl: scram_sha512` and `tls: enable` in the trigger metadata.
+> **KEDA Kafka Trigger Authentication**: Injecting `KAFKA_SASL_PASSWORD` into the worker pod environment alone does **not** provide credentials to KEDA. The KEDA operator runs as an external controller in its own namespace and queries Kafka broker lag independently. KEDA requires explicit authentication configured via a `TriggerAuthentication` resource that references `KAFKA_SASL_USERNAME` and `KAFKA_SASL_PASSWORD` from `rag-inference-secrets`, coupled with `sasl: plaintext` (denoting SASL/PLAIN) and `tls: enable` in the trigger metadata for Confluent Cloud.
 
 ---
 
