@@ -152,11 +152,11 @@ cp .env.example .env
 | `RAG_SERVING_LOG_LEVEL` | `INFO` | Structured logging verbosity level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | `PROMETHEUS_SERVER_ADDRESS` | `http://prometheus-k8s.monitoring.svc:9090` | Prometheus query URL for KEDA queue delay autoscaling trigger. |
 | `PROMETHEUS_BEARER_TOKEN` | `null` | Optional bearer authentication token for secured Prometheus queries. |
-| `KAFKA_BOOTSTRAP_SERVERS` | `kafka.event-streaming.svc:9092` | Kafka broker endpoints for Batch Ingestion backlog autoscaling trigger. |
+| `KAFKA_BOOTSTRAP_SERVERS` | `pkc-xxxx.us-east-1.aws.confluent.cloud:9092` | Kafka broker endpoints for Batch Ingestion backlog autoscaling trigger (Confluent Cloud or dedicated cluster). |
 | `KAFKA_CONSUMER_GROUP` | `rag-batch-embedder-group` | Kafka consumer group name monitored by KEDA `ScaledObject`. |
 | `KAFKA_TOPIC` | `rag.ingestion.chunks` | Kafka ingestion topic name delivering chunk embeddings. |
-| `KAFKA_SASL_USERNAME` | `null` | Kafka SASL username for consumer group lag monitoring. |
-| `KAFKA_SASL_PASSWORD` | `null` | Kafka SASL password for consumer group lag monitoring. |
+| `KAFKA_SASL_USERNAME` | `null` | Kafka SASL username (Confluent Cloud API key) for consumer group lag monitoring. |
+| `KAFKA_SASL_PASSWORD` | `null` | Kafka SASL password (Confluent Cloud API secret) for consumer group lag monitoring. |
 | `HF_TOKEN` | `null` | Hugging Face access token for gated model downloads during export (`scripts/export_onnx.py`). |
 | `AWS_ACCESS_KEY_ID` | `null` | S3 / MinIO access key ID for pulling serialized TensorRT engines (`model.plan`). |
 | `AWS_SECRET_ACCESS_KEY` | `null` | S3 / MinIO secret access key for pulling serialized TensorRT engines. |

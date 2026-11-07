@@ -76,7 +76,7 @@ class TestHelmConfigs(unittest.TestCase):
         self.assertIn("spotInstance", tolerations)
         self.assertEqual(data["alerts"]["warningBacklogChunks"], "500000")
         trigger = data["autoscaling"]["triggers"][0]
-        self.assertEqual(trigger["metadata"]["sasl"], "scram_sha512")
+        self.assertEqual(trigger["metadata"]["sasl"], "plaintext")
         self.assertEqual(trigger["metadata"]["tls"], "enable")
         self.assertEqual(trigger["authenticationRef"]["name"], "rag-inference-batch-keda-auth")
         self.assertEqual(

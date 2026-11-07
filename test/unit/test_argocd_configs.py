@@ -129,6 +129,22 @@ class TestArgoCDConfigs(unittest.TestCase):
         self.assertEqual(data["spec"]["destination"]["namespace"], "rag-inference-serving")
         self.assertTrue(data["spec"]["syncPolicy"]["automated"]["prune"])
 
+    def test_batch_ingestion_confluent_cloud_keda_trigger(self) -> None:
+        helm_dir = os.path.join(os.path.dirname(self.argocd_dir), "helm")
+        batch_values_path = os.path.join(helm_dir, "values-batch-ingestion.yaml")
+        with open(batch_values_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+
+        self.assertTrue(data["autoscaling"]["enabled"])
+        triggers = data["autoscaling"]["triggers"]
+        kafka_trigger = next(t for t in triggers if t["type"] == "kafka")
+        meta = kafka_trigger["metadata"]
+        self.assertEqual(meta["topic"], "rag.ingestion.chunks")
+        self.assertEqual(meta["consumerGroup"], "rag-batch-embedder-group")
+        self.assertEqual(meta["sasl"], "plaintext")
+        self.assertEqual(meta["tls"], "enable")
+        self.assertIn("confluent.cloud", meta["bootstrapServers"])
+
     def test_rollout_canary_manifest(self) -> None:
         path = os.path.join(self.argocd_dir, "rollout-canary.yaml")
         with open(path, encoding="utf-8") as f:

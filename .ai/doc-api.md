@@ -824,14 +824,14 @@ The microservice reads configuration parameters via Pydantic `ServingSettings` w
 | `RAG_SERVING_LOG_LEVEL` | `string` | `INFO` | Structured logging verbosity level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | `PROMETHEUS_SERVER_ADDRESS` | `string` | `http://prometheus-k8s.monitoring.svc:9090` | Prometheus query URL for KEDA `triton_queue_duration_microseconds` autoscaling trigger. |
 | `PROMETHEUS_BEARER_TOKEN` | `string` | `null` | Optional bearer authentication token for secured Prometheus queries. |
-| `KAFKA_BOOTSTRAP_SERVERS` | `string` | `kafka.event-streaming.svc:9092` | Kafka broker endpoints for Batch Ingestion backlog autoscaling trigger. |
+| `KAFKA_BOOTSTRAP_SERVERS` | `string` | `pkc-xxxx.us-east-1.aws.confluent.cloud:9092` | Kafka broker endpoints for Batch Ingestion backlog autoscaling trigger (Confluent Cloud or dedicated Kafka cluster). |
 | `KAFKA_CONSUMER_GROUP` | `string` | `rag-batch-embedder-group` | Kafka consumer group name monitored by KEDA `ScaledObject`. |
 | `KAFKA_TOPIC` | `string` | `rag.ingestion.chunks` | Kafka ingestion topic name delivering chunk embeddings. |
-| `KAFKA_SASL_USERNAME` | `string` | `null` | Kafka SASL username for consumer group lag monitoring. |
-| `KAFKA_SASL_PASSWORD` | `string` | `null` | Kafka SASL password for consumer group lag monitoring. |
-| `KAFKA_SASL_MECHANISM` | `string` | `SCRAM-SHA-512` | Kafka SASL mechanism (`SCRAM-SHA-512` or `PLAIN`). |
+| `KAFKA_SASL_USERNAME` | `string` | `null` | Kafka SASL username (Confluent Cloud API key) for consumer group lag monitoring. |
+| `KAFKA_SASL_PASSWORD` | `string` | `null` | Kafka SASL password (Confluent Cloud API secret) for consumer group lag monitoring. |
+| `KAFKA_SASL_MECHANISM` | `string` | `PLAIN` | Kafka SASL mechanism (`PLAIN` for Confluent Cloud, or `SCRAM-SHA-512`). |
 | `KAFKA_SECURITY_PROTOCOL` | `string` | `SASL_SSL` | Kafka transport protocol (`SASL_SSL` or `PLAINTEXT`). |
-| `KAFKA_SSL_CA_LOCATION` | `string` | `/etc/ssl/certs/kafka-ca.crt` | Path to Kafka broker CA certificate for TLS verification. |
+| `KAFKA_SSL_CA_LOCATION` | `string` | `null` | Path to Kafka broker CA certificate (empty for Confluent Cloud public Root CAs). |
 | `HF_TOKEN` | `string` | `null` | Hugging Face access token for gated model downloads during export (`scripts/export_onnx.py`). |
 | `AWS_ACCESS_KEY_ID` | `string` | `null` | S3 / MinIO access key ID for pulling serialized TensorRT engines (`model.plan`). |
 | `AWS_SECRET_ACCESS_KEY` | `string` | `null` | S3 / MinIO secret access key for pulling serialized TensorRT engines. |
