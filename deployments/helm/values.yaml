@@ -72,12 +72,12 @@ env:
   RAG_SERVING_GRPC_SERVER_NAME_OVERRIDE: ''
   RAG_SERVING_LOG_LEVEL: INFO
   PROMETHEUS_SERVER_ADDRESS: http://prometheus-k8s.monitoring.svc:9090
-  KAFKA_BOOTSTRAP_SERVERS: kafka.event-streaming.svc:9092
+  KAFKA_BOOTSTRAP_SERVERS: pkc-xxxx.us-east-1.aws.confluent.cloud:9092
   KAFKA_CONSUMER_GROUP: rag-batch-embedder-group
   KAFKA_TOPIC: rag.ingestion.chunks
-  KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+  KAFKA_SASL_MECHANISM: PLAIN
   KAFKA_SECURITY_PROTOCOL: SASL_SSL
-  KAFKA_SSL_CA_LOCATION: /etc/ssl/certs/kafka-ca.crt
+  KAFKA_SSL_CA_LOCATION: ''
   AWS_DEFAULT_REGION: us-east-1
   AWS_ENDPOINT_URL: ''
   MODEL_REGISTRY_STORAGE_URI: s3://rag-model-cache/tensorrt-engines/

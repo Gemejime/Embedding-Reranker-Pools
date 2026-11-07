@@ -45,11 +45,11 @@ autoscaling:
   triggers:
     - type: kafka
       metadata:
-        bootstrapServers: kafka.event-streaming.svc:9092
+        bootstrapServers: pkc-xxxx.us-east-1.aws.confluent.cloud:9092
         topic: rag.ingestion.chunks
         consumerGroup: rag-batch-embedder-group
         lagThreshold: "10000"
-        sasl: scram_sha512
+        sasl: plaintext
         tls: enable
       authenticationRef:
         name: rag-inference-batch-keda-auth
